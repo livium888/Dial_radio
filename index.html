@@ -106,6 +106,15 @@
   .item .rm { color: var(--mut); padding: 10px; min-width: 44px; min-height: 44px; }
   .empty-msg { color: var(--mut); padding: 24px 4px; }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid2 .field, .grid2 .go { margin-top: 6px; margin-bottom: 6px; }
+  .chipscroll { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 6px; scrollbar-width: none; }
+  .chipscroll::-webkit-scrollbar { display: none; }
+  .chipscroll .chip { flex: none; white-space: nowrap; }
+  .sumbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 10px 0 0; font-size: .8rem; color: var(--mut); }
+  .sumbar span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .go:disabled, .chip:disabled { opacity: .45; }
+  .actrow { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px; }
   .note { font-size: .85rem; color: var(--mut); margin: 6px 0; }
   .ghost { background: var(--line); color: var(--fg); }
   /* landscape phones and tablets: two columns, dial on the right */
@@ -1018,6 +1027,122 @@
   }
   function playFromList(label, list, i) { closeSheet(); band = { label: label, stations: list.slice() }; posU = i; setRot(posU * STEP, true); initFx(); tuneIndex(posU); }
 
+  // ---- Discover: full station search (country, language, genre, quality, codec, sort, paging) ----
+  var SORTS = [['pop', 'Most popular'], ['trend', 'Trending now'], ['votes', 'Most voted'], ['quality', 'Best quality (of loaded)'], ['new', 'Recently updated'], ['name', 'A to Z'], ['random', 'Random']];
+  var SORT_API = { pop: 'order=clickcount&reverse=true', trend: 'order=clicktrend&reverse=true', votes: 'order=votes&reverse=true', quality: 'order=clickcount&reverse=true', 'new': 'order=changetimestamp&reverse=true', name: 'order=name', random: 'order=random' };
+  var SF_DEF = { q: '', cc: '', tag: '', lang: '', codec: '', minr: 0, ord: 'pop' };
+  var sf = Object.assign({}, SF_DEF, lsGet('dial-filters', {}));
+  var tagsPromise = null, langsPromise = null;
+  function loadTags() {
+    if (!tagsPromise) tagsPromise = api('/json/tags?hidebroken=true&order=stationcount&reverse=true&limit=80').then(function (ts) {
+      return ts.map(function (t) { return t.name; }).filter(function (n) { return n && n.length >= 3 && n.length <= 24 && !STOP_TAGS[n] && /^[\x20-\x7e]+$/.test(n); }).slice(0, 40);
+    });
+    return tagsPromise.catch(function (e) { tagsPromise = null; throw e; });
+  }
+  function loadLangs() {
+    if (!langsPromise) langsPromise = api('/json/languages?hidebroken=true&order=stationcount&reverse=true&limit=60').then(function (ls) { return ls.filter(function (l) { return l.name && l.stationcount > 0; }); });
+    return langsPromise.catch(function (e) { langsPromise = null; throw e; });
+  }
+  function searchPath(f, offset, page) {
+    var p = '/json/stations/search?hidebroken=true&limit=' + page + '&offset=' + offset + '&' + SORT_API[f.ord] + httpsParam();
+    if (f.q) p += '&name=' + encodeURIComponent(f.q);
+    if (f.cc) p += '&countrycode=' + encodeURIComponent(f.cc);
+    if (f.tag) p += '&tag=' + encodeURIComponent(f.tag);
+    if (f.lang) p += '&language=' + encodeURIComponent(f.lang) + '&languageExact=true';
+    return p;
+  }
+  function stationSub(x) {
+    var tr = tierOf(x);
+    return [shortCountry(x), (x.tags || '').split(',')[0].trim(), tr === 'Unrated' ? '' : tr + (x.codec && x.codec !== 'UNKNOWN' ? ' ' + x.codec : '')].filter(Boolean).join(' · ');
+  }
+  function mkSelect(label, opts, val, onch) {
+    var sel = el('select', 'field'); sel.setAttribute('aria-label', label);
+    opts.forEach(function (a) { var o = el('option', '', a[1]); o.value = a[0]; sel.appendChild(o); });
+    sel.value = val; if (sel.value !== String(val)) sel.value = opts[0][0];
+    sel.onchange = function () { onch(sel.value); };
+    return sel;
+  }
+  function renderDiscover(box) {
+    var st = { list: [], seen: {}, offset: 0, done: false, busy: false, tok: 0, auto: 0, err: '' };
+    var timer = null, scc, sl, chipRow, sum, res, more, bPlay, bRand;
+    function save() { lsSet('dial-filters', sf); }
+    function label() { var bits = [(scc && scc.value && scc.options[scc.selectedIndex]) ? scc.options[scc.selectedIndex].text.replace(/ \(\d+\)$/, '') : '', sf.tag, sf.lang, sf.codec, sf.minr ? TIERS[sf.minr] + '+' : '', sf.q ? '“' + sf.q + '”' : ''].filter(Boolean); return bits.length ? bits.join(' · ') : 'Top stations'; }
+    function pageSize() { return (sf.codec || sf.minr) ? 200 : 100; }
+    function sortList() { if (sf.ord === 'quality') st.list.sort(function (a, b) { return tierRank(b) - tierRank(a) || effBitrate(b) - effBitrate(a); }); }
+    function paint() {
+      res.textContent = '';
+      var sortName = (SORTS.filter(function (x) { return x[0] === sf.ord; })[0] || [0, ''])[1].toLowerCase();
+      sum.textContent = (st.busy && !st.list.length ? 'Searching…' : st.list.length + (st.done ? '' : '+') + ' stations') + ' · ' + label() + ' · ' + sortName;
+      if (st.err) res.appendChild(el('div', 'empty-msg', 'Search failed: ' + st.err));
+      else if (!st.list.length && !st.busy) res.appendChild(el('div', 'empty-msg', 'No stations match. Loosen a filter.'));
+      else if (st.list.length) listItems(res, st.list, stationSub, function (i) { playFromList('Search · ' + label(), st.list, i); });
+      more.hidden = st.done || !st.list.length; more.textContent = st.busy ? 'Loading…' : 'Load more';
+      bPlay.disabled = bRand.disabled = !st.list.length;
+    }
+    function run(reset) {
+      if (reset) { st.list = []; st.seen = {}; st.offset = 0; st.done = false; st.tok++; st.auto = 0; st.err = ''; }
+      else if (st.busy || st.done) return;
+      var my = st.tok, page = pageSize(); st.busy = true; paint();
+      api(searchPath(sf, st.offset, page)).then(function (r) {
+        if (my !== st.tok) return;
+        st.offset += r.length; if (r.length < page) st.done = true;
+        var fresh = cleanList(r).filter(function (x) { var k = x.name.toLowerCase(); if (st.seen[k]) return false; st.seen[k] = 1; return true; });
+        fresh = filterQuality(fresh, sf.codec, sf.minr);
+        st.list = st.list.concat(fresh); sortList(); st.busy = false; paint();
+        if (!fresh.length && !st.done && st.auto++ < 4) run(false);
+      }).catch(function (e) { if (my !== st.tok) return; st.busy = false; st.err = e.message; paint(); });
+    }
+    function changed() { save(); run(true); }
+
+    var qi = el('input', 'field'); qi.type = 'search'; qi.placeholder = 'Station name, e.g. Kiss FM'; qi.autocomplete = 'off'; qi.value = sf.q; box.appendChild(qi);
+    qi.oninput = function () { sf.q = qi.value.trim(); clearTimeout(timer); timer = setTimeout(changed, 350); };
+    qi.onkeydown = function (e) { if (e.key === 'Enter') { clearTimeout(timer); sf.q = qi.value.trim(); changed(); qi.blur(); } };
+
+    var g1 = el('div', 'grid2'); box.appendChild(g1);
+    scc = mkSelect('Country', [['', 'Anywhere']], '', function (v) { sf.cc = v; changed(); }); g1.appendChild(scc);
+    sl = mkSelect('Language', [['', 'Any language']], '', function (v) { sf.lang = v; changed(); }); g1.appendChild(sl);
+    loadCountries().then(function (cs) {
+      cs.forEach(function (c) { var o = el('option', '', c.name + ' (' + c.stationcount + ')'); o.value = c.iso_3166_1; scc.appendChild(o); });
+      scc.value = sf.cc; if (scc.value !== sf.cc) { scc.value = ''; sf.cc = ''; } paint();
+    }).catch(function () {});
+    loadLangs().then(function (ls) {
+      ls.forEach(function (l) { var o = el('option', '', l.name.charAt(0).toUpperCase() + l.name.slice(1) + ' (' + l.stationcount + ')'); o.value = l.name; sl.appendChild(o); });
+      sl.value = sf.lang; if (sl.value !== sf.lang) { sl.value = ''; sf.lang = ''; }
+    }).catch(function () {});
+
+    box.appendChild(el('div', 'lab', 'Genre'));
+    chipRow = el('div', 'chipscroll'); box.appendChild(chipRow);
+    function drawChips(tags) {
+      chipRow.textContent = '';
+      var list = tags.slice(); if (sf.tag && list.indexOf(sf.tag) < 0) list.unshift(sf.tag);
+      list.forEach(function (t) {
+        var c = el('button', 'chip' + (sf.tag === t ? ' on' : ''), t);
+        c.onclick = function () { sf.tag = sf.tag === t ? '' : t; drawChips(tags); changed(); }; chipRow.appendChild(c);
+      });
+    }
+    drawChips(GENRES);
+    loadTags().then(function (t) { if (t.length) drawChips(t); }).catch(function () {});
+
+    sum = el('div', 'sumbar'); box.appendChild(sum);
+    var act = el('div', 'actrow'); box.appendChild(act);
+    var adv = el('div', ''), advOpen = !!(sf.codec || sf.minr || sf.ord !== 'pop');
+    adv.hidden = !advOpen;
+    var bF = el('button', 'chip' + (advOpen ? ' on' : ''), 'Filters'); bF.onclick = function () { adv.hidden = !adv.hidden; bF.classList.toggle('on', !adv.hidden); }; act.appendChild(bF);
+    bPlay = el('button', 'chip', 'Play all'); bRand = el('button', 'chip', 'Random');
+    bPlay.onclick = function () { if (st.list.length) playFromList('Search · ' + label(), st.list, 0); };
+    bRand.onclick = function () { if (st.list.length) playFromList('Search · ' + label(), st.list, Math.floor(Math.random() * st.list.length)); };
+    act.appendChild(bPlay); act.appendChild(bRand);
+    var rs = el('button', 'chip', 'Reset'); rs.onclick = function () { sf = Object.assign({}, SF_DEF); save(); renderSheet(); }; act.appendChild(rs);
+    box.appendChild(adv);
+    var g2 = el('div', 'grid2'); adv.appendChild(g2);
+    g2.appendChild(mkSelect('Minimum quality', [['0', 'Any quality'], ['2', 'OK or better'], ['3', 'Good or better'], ['4', 'Hi-fi or better']], String(sf.minr), function (v) { sf.minr = Number(v); changed(); }));
+    g2.appendChild(mkSelect('Codec', [['', 'Any codec'], ['MP3', 'MP3'], ['AAC', 'AAC / AAC+'], ['OGG', 'Ogg / Opus']], sf.codec, function (v) { sf.codec = v; changed(); }));
+    adv.appendChild(mkSelect('Sort', SORTS, sf.ord, function (v) { sf.ord = v; changed(); }));
+    res = el('div', ''); box.appendChild(res);
+    more = el('button', 'go ghost', 'Load more'); more.onclick = function () { run(false); }; box.appendChild(more);
+    run(true);
+  }
+
   function renderSheet() {
     Array.prototype.forEach.call(document.querySelectorAll('#tabs .tab'), function (b) { b.classList.toggle('on', b.dataset.t === sheetTab); });
     var onTab = document.querySelector('#tabs .tab.on'); if (onTab && onTab.scrollIntoView) { try { onTab.scrollIntoView({ inline: 'nearest', block: 'nearest' }); } catch (e) {} }
@@ -1081,23 +1206,7 @@
         function (i) { playFromList('Heard', heard, i); });
       if (heard.length) { var clr = el('button', 'go', 'Clear log'); clr.style.background = 'var(--line)'; clr.style.color = 'var(--fg)'; clr.onclick = function () { heard = []; lsSet('dial-heard', heard); renderSheet(); }; box.appendChild(clr); }
     } else if (sheetTab === 'search') {
-      var qi = el('input', 'field'); qi.type = 'search'; qi.placeholder = 'Station name, e.g. Kiss FM'; qi.autocomplete = 'off'; box.appendChild(qi);
-      var qo = el('div', ''); box.appendChild(qo);
-      var qt = null, qk = 0;
-      var qrun = function () {
-        var q = qi.value.trim(); qo.textContent = ''; if (q.length < 2) return;
-        var my = ++qk; qo.appendChild(el('div', 'empty-msg', 'Searching…'));
-        api('/json/stations/search?hidebroken=true&order=clickcount&reverse=true&limit=40&name=' + encodeURIComponent(q) + httpsParam()).then(function (res) {
-          if (my !== qk) return;
-          var list = cleanList(res); qo.textContent = '';
-          if (!list.length) { qo.appendChild(el('div', 'empty-msg', 'No stations match “' + q + '”.')); return; }
-          listItems(qo, list, function (x) { var tr = tierOf(x); return [shortCountry(x), x.tags.split(',')[0].trim(), tr === 'Unrated' ? '' : tr].filter(Boolean).join(' · '); },
-            function (i) { playFromList('Search · ' + q, list, i); });
-        }).catch(function (e) { if (my !== qk) return; qo.textContent = ''; qo.appendChild(el('div', 'empty-msg', 'Search failed: ' + e.message)); });
-      };
-      qi.oninput = function () { clearTimeout(qt); qt = setTimeout(qrun, 350); };
-      qi.onkeydown = function (e) { if (e.key === 'Enter') { clearTimeout(qt); qrun(); } };
-      setTimeout(function () { try { qi.focus(); } catch (e) {} }, 60);
+      renderDiscover(box);
     } else if (sheetTab === 'more') {
       box.appendChild(el('div', 'lab', 'Sleep timer'));
       var sc2 = el('div', 'chips');
