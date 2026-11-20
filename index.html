@@ -120,6 +120,18 @@
   .mapcv { display: block; width: 100%; height: 250px; touch-action: none; cursor: grab; }
   .mapbtn { position: absolute; right: 8px; width: 44px; height: 44px; border-radius: 22px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); font-size: 1.25rem; line-height: 1; }
   .mapbtn.z1 { top: 8px; } .mapbtn.z2 { top: 58px; } .mapbtn.z3 { top: 108px; font-size: .72rem; font-weight: 600; }
+  .applied { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0 2px; scrollbar-width: none; }
+  .applied::-webkit-scrollbar { display: none; }
+  .achip { flex: none; white-space: nowrap; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 0; background: var(--fg); color: var(--bg); font-size: .85rem; font-weight: 600; }
+  .toprow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0 2px; }
+  .fbtn { min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--fg); background: transparent; color: var(--fg); font-size: .9rem; font-weight: 600; }
+  .fbtn.on { background: color-mix(in srgb, var(--fg) 14%, transparent); }
+  .fpanel { position: absolute; inset: 0; z-index: 6; background: var(--panel); border-radius: 22px 22px 0 0; display: flex; flex-direction: column; }
+  .fphead { display: flex; align-items: center; gap: 8px; padding: 16px 16px 8px; }
+  .fphead strong { flex: 1; font-size: 1.1rem; }
+  .fpbody { flex: 1; overflow-y: auto; padding: 0 16px 8px; }
+  .fpfoot { padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+  .fpfoot .go { width: 100%; }
   .moodrow { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
   .moodrow::-webkit-scrollbar, .chipscroll2::-webkit-scrollbar { display: none; }
   .tilegrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -1248,13 +1260,13 @@
   function renderDiscover(box) {
     var view = lsGet('dial-view', 'browse'); if (view !== 'map' && view !== 'browse') view = 'browse';
     var st = { list: [], seen: {}, offset: 0, done: false, busy: false, tok: 0, auto: 0, err: '' };
-    var timer = null, scc, sl, sQual, sCodec, sSort, qi, gi, chipRow, sum, res, more, bPlay, bRand, qsum, map = null, home, ctl, backBtn, chipTags = GENRES.slice();
+    var timer = null, scc, sl, sQual, sCodec, sSort, qi, gi, chipRow, sum, res, more, bPlay, bRand, qsum, map = null, home, ctl, backBtn, seg, ap, bF, fShow, fp, chipTags = GENRES.slice();
     function save() { lsSet('dial-filters', sf); }
     function label() { var bits = [(scc && scc.value && scc.options[scc.selectedIndex]) ? scc.options[scc.selectedIndex].text.replace(/ \(\d+\)$/, '') : '', sf.tag, sf.lang, sf.codec, sf.minr ? TIERS[sf.minr] + '+' : '', sf.q ? '“' + sf.q + '”' : ''].filter(Boolean); return bits.length ? bits.join(' · ') : 'Top stations'; }
     function pageSize() { return (sf.codec || sf.minr) ? 200 : 100; }
     function sortList() { if (sf.ord === 'quality') st.list.sort(function (a, b) { return tierRank(b) - tierRank(a) || effBitrate(b) - effBitrate(a); }); }
     function hasMain() { return !!(sf.q || sf.cc || sf.tag || sf.lang); }
-    function sync() { var showHome = view === 'browse' && !hasMain(); home.hidden = !showHome; ctl.hidden = showHome; if (backBtn) backBtn.hidden = view !== 'browse'; }
+    function sync() { var showHome = view === 'browse' && !hasMain(); home.hidden = !showHome; ctl.hidden = showHome; if (backBtn) backBtn.hidden = view !== 'browse'; if (seg) seg.hidden = showHome ? false : view === 'browse'; }
     function paint() {
       res.textContent = '';
       var sortName = (SORTS.filter(function (x) { return x[0] === sf.ord; })[0] || [0, ''])[1].toLowerCase();
@@ -1265,6 +1277,7 @@
       else if (st.list.length) listItems(res, st.list, stationSub, function (i) { playFromList('Search · ' + label(), st.list, i); });
       more.hidden = st.done || !st.list.length; more.textContent = st.busy ? 'Loading…' : 'Load more';
       bPlay.disabled = bRand.disabled = !st.list.length;
+      if (fShow) fShow.textContent = st.busy && !st.list.length ? 'Searching…' : 'Show ' + st.list.length + (st.done ? '' : '+') + ' stations';
     }
     function run(reset) {
       if (reset) { st.list = []; st.seen = {}; st.offset = 0; st.done = false; st.tok++; st.auto = 0; st.err = ''; }
@@ -1299,12 +1312,12 @@
       scc.value = sf.cc; if (scc.value !== sf.cc && sf.cc) { /* options not loaded yet: map selection still applies */ }
       sl.value = sf.lang; sQual.value = String(sf.minr); sCodec.value = sf.codec; sSort.value = sf.ord;
     }
-    function changed() { save(); run(true); sync(); if (map) map.redraw(); }
+    function changed() { save(); run(true); sync(); drawApplied(); if (map) map.redraw(); }
     function setTag(v) { v = (v || '').trim().toLowerCase(); if (v === sf.tag) return; sf.tag = v; drawChips(); changed(); }
     function go(patch) { sf = Object.assign({}, SF_DEF, patch); applyUi(); changed(); }
 
     // view switch
-    var seg = el('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', 'Search view');
+    seg = el('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', 'Search view');
     [['browse', '☰  Browse'], ['map', '🌍  Map']].forEach(function (v) {
       var b = el('button', 'segb' + (view === v[0] ? ' on' : ''), v[1]); b.setAttribute('aria-pressed', String(view === v[0]));
       b.onclick = function () { if (view !== v[0]) { lsSet('dial-view', v[0]); renderSheet(); } }; seg.appendChild(b);
@@ -1325,53 +1338,88 @@
     backBtn = el('button', 'chip', '‹ Browse'); backBtn.style.margin = '8px 0 0'; backBtn.onclick = function () { go({}); }; ctl.appendChild(backBtn);
     buildHome(home, go);
 
-    var g1 = el('div', 'grid2'); ctl.appendChild(g1);
+    // ---- applied filters (removable chips) and the Filters button
+    function facets() {
+      var f = [];
+      if (sf.tag) f.push([(MOOD_DEFS.some(function (m) { return m[0] === sf.tag; }) ? 'Mood: ' : 'Genre: ') + sf.tag, function () { sf.tag = ''; }]);
+      if (sf.cc) f.push([(scc && scc.value === sf.cc && scc.options[scc.selectedIndex]) ? scc.options[scc.selectedIndex].text.replace(/ \(\d+\)$/, '') : sf.cc, function () { sf.cc = ''; }]);
+      if (sf.lang) f.push(['Language: ' + sf.lang.charAt(0).toUpperCase() + sf.lang.slice(1), function () { sf.lang = ''; }]);
+      if (sf.codec) f.push([sf.codec, function () { sf.codec = ''; }]);
+      if (sf.minr) f.push([TIERS[sf.minr] + '+', function () { sf.minr = 0; }]);
+      return f;
+    }
+    function drawApplied() {
+      if (!ap) return;
+      ap.textContent = '';
+      var fs = facets();
+      fs.forEach(function (x) {
+        var b = el('button', 'achip', x[0] + '  ×'); b.setAttribute('aria-label', 'Remove filter ' + x[0]);
+        b.onclick = function () { x[1](); applyUi(); changed(); }; ap.appendChild(b);
+      });
+      ap.hidden = !fs.length;
+      bF.textContent = 'Filters' + (fs.length ? ' · ' + fs.length : ''); bF.classList.toggle('on', fs.length > 0);
+    }
+    ap = el('div', 'applied'); ap.hidden = true; ctl.appendChild(ap);
+    var top = el('div', 'toprow'); ctl.appendChild(top);
+    bF = el('button', 'fbtn', 'Filters'); bF.onclick = function () { fp.hidden = false; }; top.appendChild(bF);
+    bPlay = el('button', 'chip', 'Play all'); bRand = el('button', 'chip', 'Random');
+    bPlay.onclick = function () { if (st.list.length) playFromList('Search · ' + label(), st.list, 0); };
+    bRand.onclick = function () { if (st.list.length) playFromList('Search · ' + label(), st.list, Math.floor(Math.random() * st.list.length)); };
+    top.appendChild(bPlay); top.appendChild(bRand);
+    sum = el('div', 'sumbar'); ctl.appendChild(sum);
+    qsum = el('div', 'note'); qsum.id = 'qsum'; ctl.appendChild(qsum);
+    res = el('div', ''); ctl.appendChild(res);
+    more = el('button', 'go ghost', 'Load more'); more.onclick = function () { run(false); }; ctl.appendChild(more);
+
+    // ---- filter panel: covers the sheet, opened by the Filters button
+    var oldFp = document.getElementById('fpanel'); if (oldFp) oldFp.remove();
+    fp = el('div', 'fpanel'); fp.id = 'fpanel'; fp.hidden = true; fp.setAttribute('role', 'dialog'); fp.setAttribute('aria-label', 'Filters');
+    var fh = el('div', 'fphead'); fp.appendChild(fh);
+    fh.appendChild(el('strong', '', 'Filters'));
+    var fClear = el('button', 'chip', 'Clear all'); fClear.onclick = function () { sf = Object.assign({}, SF_DEF, { q: sf.q }); applyUi(); changed(); }; fh.appendChild(fClear);
+    var fb = el('div', 'fpbody'); fp.appendChild(fb);
+    var ff = el('div', 'fpfoot'); fp.appendChild(ff);
+    fShow = el('button', 'go', 'Show stations'); fShow.onclick = function () { fp.hidden = true; box.scrollTop = 0; }; ff.appendChild(fShow);
+    document.getElementById('sheet').appendChild(fp);
+
+    fb.appendChild(el('div', 'lab', 'Country and language'));
+    var g1 = el('div', 'grid2'); fb.appendChild(g1);
     scc = mkSelect('Country', [['', 'Anywhere']], '', function (v) { sf.cc = v; if (map && v) map.focus(v); changed(); }); g1.appendChild(scc);
     sl = mkSelect('Language', [['', 'Any language']], '', function (v) { sf.lang = v; changed(); }); g1.appendChild(sl);
     loadCountries().then(function (cs) {
       cs.forEach(function (c) { var o = el('option', '', c.name + ' (' + c.stationcount + ')'); o.value = c.iso_3166_1; scc.appendChild(o); });
-      scc.value = sf.cc; if (scc.value !== sf.cc) { scc.value = ''; sf.cc = ''; } paint(); if (map) { map.setData(cs); if (sf.cc) map.focus(sf.cc); }
+      scc.value = sf.cc; if (scc.value !== sf.cc) { scc.value = ''; sf.cc = ''; } paint(); drawApplied(); if (map) { map.setData(cs); if (sf.cc) map.focus(sf.cc); }
     }).catch(function () {});
     loadLangs().then(function (ls) {
       ls.forEach(function (l) { var o = el('option', '', l.name.charAt(0).toUpperCase() + l.name.slice(1) + ' (' + l.stationcount + ')'); o.value = l.name; sl.appendChild(o); });
       sl.value = sf.lang; if (sl.value !== sf.lang) { sl.value = ''; sf.lang = ''; }
     }).catch(function () {});
 
-    ctl.appendChild(el('div', 'lab', 'Genre'));
-    gi = el('input', 'field'); gi.type = 'search'; gi.placeholder = 'Any genre. Type to search all tags'; gi.setAttribute('list', 'taglist'); gi.autocomplete = 'off'; gi.value = sf.tag; ctl.appendChild(gi);
-    var dl = el('datalist'); dl.id = 'taglist'; ctl.appendChild(dl);
+    fb.appendChild(el('div', 'lab', 'Genre'));
+    gi = el('input', 'field'); gi.type = 'search'; gi.placeholder = 'Any genre. Type to search all tags'; gi.setAttribute('list', 'taglist'); gi.autocomplete = 'off'; gi.value = sf.tag; fb.appendChild(gi);
+    var dl = el('datalist'); dl.id = 'taglist'; fb.appendChild(dl);
     var gt = null;
     gi.oninput = function () { clearTimeout(gt); gt = setTimeout(function () { setTag(gi.value); }, 600); };
     gi.onkeydown = function (e) { if (e.key === 'Enter') { clearTimeout(gt); setTag(gi.value); gi.blur(); } };
-    chipRow = el('div', 'chipscroll'); ctl.appendChild(chipRow);
+    chipRow = el('div', 'chipscroll'); fb.appendChild(chipRow);
     drawChips();
     loadTags().then(function (t) {
       chipTags = GENRES.concat(t.filter(function (x) { return GENRES.indexOf(x) < 0; }).slice(0, 30)); drawChips();
       t.forEach(function (x) { var o = el('option'); o.value = x; dl.appendChild(o); });
     }).catch(function () {});
 
-    sum = el('div', 'sumbar'); ctl.appendChild(sum);
-    qsum = el('div', 'note'); qsum.id = 'qsum'; ctl.appendChild(qsum);
-    var act = el('div', 'actrow'); ctl.appendChild(act);
-    var adv = el('div', ''), advOpen = !!(sf.codec || sf.minr || sf.ord !== 'pop');
-    adv.hidden = !advOpen;
-    var bF = el('button', 'chip' + (advOpen ? ' on' : ''), 'Filters'); bF.onclick = function () { adv.hidden = !adv.hidden; bF.classList.toggle('on', !adv.hidden); }; act.appendChild(bF);
-    bPlay = el('button', 'chip', 'Play all'); bRand = el('button', 'chip', 'Random');
-    bPlay.onclick = function () { if (st.list.length) playFromList('Search · ' + label(), st.list, 0); };
-    bRand.onclick = function () { if (st.list.length) playFromList('Search · ' + label(), st.list, Math.floor(Math.random() * st.list.length)); };
-    act.appendChild(bPlay); act.appendChild(bRand);
-    var rs = el('button', 'chip', 'Reset'); rs.onclick = function () { sf = Object.assign({}, SF_DEF); save(); renderSheet(); }; act.appendChild(rs);
-    ctl.appendChild(adv);
-    var g2 = el('div', 'grid2'); adv.appendChild(g2);
+    fb.appendChild(el('div', 'lab', 'Sound'));
+    var g2 = el('div', 'grid2'); fb.appendChild(g2);
     sQual = mkSelect('Minimum quality', [['0', 'Any quality'], ['2', 'OK or better'], ['3', 'Good or better'], ['4', 'Hi-fi or better']], String(sf.minr), function (v) { sf.minr = Number(v); changed(); }); g2.appendChild(sQual);
     sCodec = mkSelect('Codec', [['', 'Any codec'], ['MP3', 'MP3'], ['AAC', 'AAC / AAC+'], ['OGG', 'Ogg / Opus']], sf.codec, function (v) { sf.codec = v; changed(); }); g2.appendChild(sCodec);
-    sSort = mkSelect('Sort', SORTS, sf.ord, function (v) { sf.ord = v; changed(); }); adv.appendChild(sSort);
-    res = el('div', ''); ctl.appendChild(res);
-    more = el('button', 'go ghost', 'Load more'); more.onclick = function () { run(false); }; ctl.appendChild(more);
+    fb.appendChild(el('div', 'lab', 'Sort'));
+    sSort = mkSelect('Sort', SORTS, sf.ord, function (v) { sf.ord = v; changed(); }); fb.appendChild(sSort);
+    drawApplied();
     sync(); run(true);
   }
 
   function renderSheet() {
+    var staleFp = document.getElementById('fpanel'); if (staleFp) staleFp.remove();
     Array.prototype.forEach.call(document.querySelectorAll('#tabs .tab'), function (b) { b.classList.toggle('on', b.dataset.t === sheetTab); });
     var onTab = document.querySelector('#tabs .tab.on'); if (onTab && onTab.scrollIntoView) { try { onTab.scrollIntoView({ inline: 'nearest', block: 'nearest' }); } catch (e) {} }
     var box = $('sbody'); box.textContent = '';
