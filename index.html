@@ -1063,7 +1063,7 @@
     var p = '/json/stations/search?hidebroken=true&limit=' + page + '&offset=' + offset + '&' + SORT_API[f.ord] + httpsParam();
     if (f.q) p += '&name=' + encodeURIComponent(f.q);
     if (f.cc) p += '&countrycode=' + encodeURIComponent(f.cc);
-    if (f.tag) p += '&tag=' + encodeURIComponent(f.tag);
+    if (f.tag) p += '&tag=' + encodeURIComponent(f.tag) + '&tagExact=true';
     if (f.lang) p += '&language=' + encodeURIComponent(f.lang) + '&languageExact=true';
     return p;
   }
@@ -1280,6 +1280,7 @@
         if (al) st.done = true; else { st.offset += r.length; if (r.length < page) st.done = true; }
         var fresh = cleanList(r).filter(function (x) { var k = x.name.toLowerCase(); if (st.seen[k]) return false; st.seen[k] = 1; return true; });
         fresh = filterQuality(fresh, sf.codec, sf.minr);
+        if (sf.tag) { var okT = {}; (al || [sf.tag]).forEach(function (t) { okT[t.toLowerCase()] = 1; }); fresh = fresh.filter(function (x) { return (x.tags || '').split(',').some(function (t) { return okT[t.trim()]; }); }); }
         st.list = st.list.concat(fresh); sortList(); st.busy = false; paint();
         if (!fresh.length && !st.done && st.auto++ < 4) run(false);
       }).catch(function (e) { if (my !== st.tok) return; st.busy = false; st.err = e.message; paint(); });
