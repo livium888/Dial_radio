@@ -120,6 +120,10 @@
   .mapcv { display: block; width: 100%; height: 250px; touch-action: none; cursor: grab; }
   .mapbtn { position: absolute; right: 8px; width: 44px; height: 44px; border-radius: 22px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); font-size: 1.25rem; line-height: 1; }
   .mapbtn.z1 { top: 8px; } .mapbtn.z2 { top: 58px; } .mapbtn.z3 { top: 108px; font-size: .72rem; font-weight: 600; }
+  .item.ranked { display: flex; align-items: center; }
+  .item.ranked .t { flex: 1; min-width: 0; }
+  .cnt { flex: none; min-width: 40px; text-align: right; font-size: .85rem; font-weight: 600; color: var(--mut); padding-right: 4px; }
+  .rank { flex: none; width: 36px; text-align: center; font-weight: 700; font-size: 1.05rem; color: var(--mut); }
   .applied { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0 2px; scrollbar-width: none; }
   .applied::-webkit-scrollbar { display: none; }
   .achip { flex: none; white-space: nowrap; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 0; background: var(--fg); color: var(--bg); font-size: .85rem; font-weight: 600; }
@@ -229,6 +233,7 @@
   <div id="tabs">
     <div id="tabset">
       <button class="tab" data-t="search">Search</button>
+      <button class="tab" data-t="charts">Charts</button>
       <button class="tab" data-t="saved">Saved</button>
       <button class="tab" data-t="heard">Heard</button>
       <button class="tab" data-t="songs">Songs</button>
@@ -290,7 +295,7 @@
 
   function norm(s) {
     var lon = Number(s.geo_long);
-    return { id: s.stationuuid, name: (s.name || '').trim() || 'Unnamed', url: s.url_resolved || s.url, country: s.country || '', tags: (s.tags || '').toLowerCase(), bitrate: s.bitrate || 0, codec: (s.codec || '').toUpperCase(), cc: (s.countrycode || '').toUpperCase(), favicon: s.favicon || '', cnt: Number(s.clickcount) || 0, lon: (s.geo_long != null && isFinite(lon) && lon !== 0) ? lon : null };
+    return { id: s.stationuuid, name: (s.name || '').trim() || 'Unnamed', url: s.url_resolved || s.url, country: s.country || '', tags: (s.tags || '').toLowerCase(), bitrate: s.bitrate || 0, codec: (s.codec || '').toUpperCase(), cc: (s.countrycode || '').toUpperCase(), favicon: s.favicon || '', cnt: Number(s.clickcount) || 0, votes: Number(s.votes) || 0, trend: Number(s.clicktrend) || 0, lon: (s.geo_long != null && isFinite(lon) && lon !== 0) ? lon : null };
   }
   var TIERS = ['Unrated', 'Low', 'OK', 'Good', 'Hi-fi', 'Lossless'];
   function codecFamily(s) {
@@ -1223,8 +1228,87 @@
   function tagCount(tag) { var al = TAG_ALIASES[tag] || [tag], n = 0; al.forEach(function (a) { n += tagCounts[a] || 0; }); return n; }
   function tileBg(h) { return 'linear-gradient(135deg, hsl(' + h + ',50%,26%), hsl(' + ((h + 30) % 360) + ',46%,16%))'; }
 
+  // ---- Charts: ranked top lists. Basis = clicks by Radio Browser users in the last 24h, or all-time votes. ----
+  var CH_DEF = { cc: '', tag: '', basis: 'plays', n: 50 };
+  var chart = Object.assign({}, CH_DEF, lsGet('dial-chart', {}));
+  var chartTok = 0;
+  function openChart(patch) { chart = Object.assign({}, CH_DEF, patch || {}); lsSet('dial-chart', chart); sheetTab = 'charts'; document.body.classList.add('sheet-open'); renderSheet(); }
+  function regionName(cc) { try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(cc) || cc; } catch (e) { return cc; } }
+  function chartFetch(c) {
+    var order = c.basis === 'votes' ? 'order=votes&reverse=true' : 'order=clickcount&reverse=true';
+    var L = Math.min(250, Math.max(40, c.n * 4));
+    var al = c.tag ? (TAG_ALIASES[c.tag] || [c.tag]) : [null], ok = {}, failed = 0;
+    if (c.tag) al.forEach(function (t) { ok[t.toLowerCase()] = 1; });
+    return Promise.all(al.map(function (t) {
+      var p = '/json/stations/search?hidebroken=true&limit=' + L + '&offset=0&' + order + httpsParam();
+      if (c.cc) p += '&countrycode=' + encodeURIComponent(c.cc);
+      if (t) p += '&tag=' + encodeURIComponent(t) + '&tagExact=true';
+      return api(p).catch(function () { failed++; return []; });
+    })).then(function (lists) {
+      if (failed === al.length) throw new Error('offline');
+      var key = c.basis === 'votes' ? 'votes' : 'cnt', seenId = {}, byName = {}, out = [];
+      lists.forEach(function (l) { l.forEach(function (r) {
+        var x = norm(r); if (!x.url || seenId[x.id]) return; seenId[x.id] = 1;
+        if (c.tag && !x.tags.split(',').some(function (t) { return ok[t.trim()]; })) return;
+        var k = x.name.toLowerCase() + '|' + x.cc, e = byName[k];
+        if (!e) { byName[k] = x; x.sum = x[key]; x.dup = 1; out.push(x); return; }
+        e.sum += x[key]; e.dup++; if (x[key] > e[key]) { e.url = x.url; e.id = x.id; e.codec = x.codec; e.bitrate = x.bitrate; e[key] = x[key]; }
+      }); });
+      out.sort(function (a, b) { return b.sum - a.sum; });
+      return out.slice(0, c.n);
+    });
+  }
+  function compactNum(n) { return n >= 10000 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (Math.round(n / 100) / 10) + 'k' : String(n); }
+  function renderChart(box) {
+    var tok = ++chartTok;
+    function save() { lsSet('dial-chart', chart); }
+    function autoN() { chart.n = chart.cc ? 10 : 50; }
+    box.appendChild(el('div', 'lab', 'Charts'));
+    box.appendChild(el('div', 'note', 'Ranked by clicks from Radio Browser users in the last 24 hours, or by all-time votes. This is popularity in that directory, not total audience. Duplicate listings of one station are merged.'));
+    var sg = el('div', 'seg');
+    [['plays', 'Most played today'], ['votes', 'All-time favourites']].forEach(function (b) {
+      var x = el('button', 'segb' + (chart.basis === b[0] ? ' on' : ''), b[1]); x.onclick = function () { chart.basis = b[0]; save(); renderSheet(); }; sg.appendChild(x);
+    });
+    box.appendChild(sg);
+    var g = el('div', 'grid2'); box.appendChild(g);
+    var scc = mkSelect('Country', [['', 'Worldwide']], chart.cc, function (v) { chart.cc = v; autoN(); save(); renderSheet(); }); g.appendChild(scc);
+    loadCountries().then(function (cs) {
+      cs.forEach(function (c) { var o = el('option', '', c.name); o.value = c.iso_3166_1; scc.appendChild(o); });
+      scc.value = chart.cc; if (scc.value !== chart.cc) scc.value = '';
+    }).catch(function () {});
+    var gopts = [['', 'Any genre']].concat(GENRE_TILES.map(function (t) { return [t[0], t[1]]; }), [['stories', 'Stories & drama']]);
+    var sgn = mkSelect('Genre', gopts, chart.tag, function (v) { chart.tag = v; autoN(); save(); renderSheet(); }); g.appendChild(sgn);
+    var g2 = el('div', 'grid2'); box.appendChild(g2);
+    g2.appendChild(mkSelect('Size', [['10', 'Top 10'], ['25', 'Top 25'], ['50', 'Top 50']], String(chart.n), function (v) { chart.n = Number(v); save(); renderSheet(); }));
+    var title = (chart.tag ? (gopts.filter(function (o) { return o[0] === chart.tag; })[0] || ['', chart.tag])[1] + ' · ' : '') + (chart.cc ? regionName(chart.cc) : 'Worldwide');
+    var res = el('div', ''); res.id = 'chartres'; box.appendChild(res);
+    res.appendChild(el('div', 'empty-msg', 'Loading chart…'));
+    chartFetch(chart).then(function (list) {
+      if (tok !== chartTok) return;
+      res.textContent = '';
+      if (!list.length) { res.appendChild(el('div', 'empty-msg', 'No stations found for this chart.')); return; }
+      var head = el('div', 'sumbar', 'Top ' + list.length + ' · ' + title + ' · ' + (chart.basis === 'votes' ? 'all-time votes' : 'plays today')); res.appendChild(head);
+      var pl = el('button', 'chip', 'Play from #1'); pl.onclick = function () { playFromList('Chart · ' + title, list, 0); }; res.appendChild(pl);
+      list.forEach(function (x, i) {
+        var row = el('div', 'item ranked'), rk = el('div', 'rank', String(i + 1)), t = el('div', 't');
+        var arrow = chart.basis === 'plays' ? (x.trend > 0 ? '▲ ' : x.trend < 0 ? '▼ ' : '') : '';
+        var cnt = el('div', 'cnt', compactNum(x.sum)); cnt.title = x.sum + (chart.basis === 'votes' ? ' votes' : ' plays today');
+        t.appendChild(el('div', 'n', x.name)); t.appendChild(el('div', 'm', arrow + stationSub(x)));
+        t.onclick = function () { playFromList('Chart · ' + title, list, i); };
+        row.appendChild(rk); row.appendChild(t); row.appendChild(cnt); res.appendChild(row);
+      });
+    }).catch(function () { if (tok !== chartTok) return; res.textContent = ''; res.appendChild(el('div', 'empty-msg', 'Could not load the chart. Check your connection.')); });
+  }
+
   function buildHome(home, go) {
     function sec(t) { home.appendChild(el('div', 'lab', t)); }
+    sec('Charts');
+    var chr = el('div', 'moodrow'); home.appendChild(chr);
+    var dcc = defaultCC();
+    [['Top 50 worldwide', 'Most played today', 40, {}], ['Top 10 · ' + regionName(dcc), 'Most played today', 205, { cc: dcc, n: 10 }], ['All-time favourites', 'Most voted', 300, { basis: 'votes' }], ['Stories top 50', 'Radio plays, audiobooks', 130, { tag: 'stories' }]].forEach(function (c) {
+      var b = el('button', 'tile'); b.style.background = tileBg(c[2]); b.appendChild(el('b', '', c[0])); b.appendChild(el('span', '', c[1]));
+      b.onclick = function () { openChart(c[3]); }; chr.appendChild(b);
+    });
     sec('Moods');
     var mr = el('div', 'moodrow'); home.appendChild(mr);
     MOOD_DEFS.forEach(function (m) {
@@ -1440,6 +1524,8 @@
       if (heard.length) { var clr = el('button', 'go', 'Clear log'); clr.style.background = 'var(--line)'; clr.style.color = 'var(--fg)'; clr.onclick = function () { heard = []; lsSet('dial-heard', heard); renderSheet(); }; box.appendChild(clr); }
     } else if (sheetTab === 'search') {
       renderDiscover(box);
+    } else if (sheetTab === 'charts') {
+      renderChart(box);
     } else if (sheetTab === 'more') {
       box.appendChild(el('div', 'lab', 'Sleep timer'));
       var sc2 = el('div', 'chips');
