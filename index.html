@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0c0c0d">
+<title>Dial</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root { color-scheme: dark light; --bg:#0c0c0d; --fg:#f4f1ea; --mut:#8f8d87; --line:#ffffff1f; --acc:#ff6a2b; --dial:#151516; --panel:#161617; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f1ece3; --fg:#161412; --mut:#7a746a; --line:#00000020; --acc:#e4470f; --dial:#e8e2d6; --panel:#f8f5ee; } }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  #app { height: 100dvh; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; overflow-y: auto; padding: calc(10px + env(safe-area-inset-top)) 20px calc(10px + env(safe-area-inset-bottom)); }
+  #app > * { flex: none; }
+  header { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+  .brand { font-weight: 700; letter-spacing: -.02em; font-size: 1.15rem; }
+  .brand b { color: var(--acc); }
+  nav { display: flex; gap: 2px; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  .tb { padding: 10px 9px; border-radius: 10px; color: var(--mut); font-size: .95rem; min-height: 44px; }
+  .tb:hover, .tb:focus-visible { color: var(--fg); background: var(--line); outline: none; }
+  .tb.ic { width: 40px; padding: 10px 0; display: grid; place-items: center; }
+  .tb.ic svg { width: 20px; height: 20px; }
+  #tabset { display: flex; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  #tabset::-webkit-scrollbar { display: none; }
+  #tabs .tab { flex: none; }
+  #now { margin-top: 10px; }
+  body { transition: background-color .5s; }
+  .sws { display: flex; justify-content: space-between; gap: 8px; width: 100%; }
+  .sws .sw { font-size: .78rem; min-height: 36px; }
+  #viz { position: absolute; left: -30px; top: -30px; width: calc(100% + 60px); height: calc(100% + 60px); pointer-events: none; z-index: 0; }
+  #dialwrap::before { content: ''; position: absolute; inset: 6%; border-radius: 50%; z-index: 0; pointer-events: none; box-shadow: 0 0 calc(24px + var(--pulse, 0) * 46px) calc(var(--pulse, 0) * 8px) color-mix(in srgb, var(--acc) calc(var(--pulse, 0) * 38%), transparent); }
+  #logo { margin-left: auto; height: 26px; width: 26px; object-fit: contain; border-radius: 6px; background: #fff; padding: 2px; flex: none; }
+  #logo[hidden] { display: none; }
+  .badge { display: flex; align-items: center; gap: 8px; font-size: .72rem; letter-spacing: .14em; color: var(--mut); text-transform: uppercase; white-space: nowrap; overflow: hidden; }
+  .badge i { width: 8px; height: 8px; border-radius: 50%; background: var(--mut); display: inline-block; flex: none; }
+  .badge.live { color: var(--acc); }
+  .badge.live i { background: var(--acc); animation: pulse 1.6s ease-in-out infinite; }
+  .badge.bad { color: #ff6b6b; }
+  .badge.bad i { background: #ff6b6b; }
+  #clock { color: var(--mut); }
+  @keyframes pulse { 50% { opacity: .25; } }
+  h1 { margin: 8px 0 2px; font-size: clamp(1.8rem, 8.2vw, 2.7rem); line-height: 1.05; letter-spacing: -.03em; font-weight: 650; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; transition: opacity .2s; }
+  #now.tuning h1 { opacity: .4; animation: flick .18s steps(2) infinite; }
+  @keyframes flick { 50% { transform: translateX(1px); filter: blur(.6px); } }
+  #sub, #meta { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #sub { color: var(--fg); opacity: .8; font-size: 1rem; min-height: 1.4em; }
+  #meta { color: var(--mut); font-size: .88rem; min-height: 1.4em; margin-top: 2px; }
+  #songbox { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 8px 10px 14px; min-height: 72px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); }
+  #songbox.empty { visibility: hidden; }
+  .songmain { flex: 1; min-width: 0; }
+  .lab2 { font-size: .66rem; letter-spacing: .16em; text-transform: uppercase; color: var(--acc); margin-bottom: 2px; }
+  #songtxt { font-size: 1.05rem; line-height: 1.25; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  #songtxt.mut { color: var(--mut); font-weight: 400; font-size: .92rem; }
+  #songtag { color: var(--mut); font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; margin-top: 2px; min-height: 1em; }
+  .songact { display: flex; align-items: center; gap: 2px; flex: none; }
+  .chip { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); font-size: .85rem; min-height: 40px; }
+  .chip.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .chip[hidden] { display: none; }
+  #stage { flex: 1 1 0; min-height: 190px; display: grid; place-items: center; margin: 4px 0; container-type: size; }
+  #dialwrap { --S: min(66vw, 300px, 30dvh); position: relative; width: var(--S); height: var(--S); }
+  @supports (width: 1cqw) { #dialwrap { --S: calc(min(100cqw, 100cqh, 340px) - 66px); } }
+  #pointer { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 11px solid var(--acc); z-index: 2; }
+  #dial { position: absolute; inset: 0; border-radius: 50%; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; outline: none; }
+  #dial:focus-visible { box-shadow: 0 0 0 2px var(--acc); }
+  #dial:active { cursor: grabbing; }
+  #dial svg { width: 100%; height: 100%; display: block; }
+  #center { position: absolute; left: 50%; top: 50%; width: 38%; height: 38%; transform: translate(-50%, -50%); border-radius: 50%; background: var(--acc); color: var(--bg); display: grid; place-items: center; z-index: 3; transition: transform .1s; }
+  #center:active { transform: translate(-50%, -50%) scale(.95); }
+  #center svg { width: 40%; height: 40%; }
+  #ring { position: absolute; inset: -4px; width: calc(100% + 8px); height: calc(100% + 8px); pointer-events: none; transform: rotate(-90deg); z-index: 1; }
+  #row { display: flex; justify-content: space-between; align-items: flex-start; margin-top: 4px; }
+  .ib { width: 62px; min-height: 62px; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--fg); padding: 6px 0; }
+  .ib:hover, .ib:focus-visible { background: var(--line); outline: none; }
+  .ib svg { width: 24px; height: 24px; }
+  .ib .l { font-size: .68rem; color: var(--mut); letter-spacing: .02em; }
+  .ib.on, .ib.on .l { color: var(--acc); }
+  .ib.sm { width: 44px; min-height: 44px; padding: 0; }
+  #moods { display: flex; gap: 6px; justify-content: center; margin-top: 4px; }
+  #moods[hidden] { display: none; }
+  #foot { display: flex; flex-direction: column; align-items: stretch; gap: 0; margin-top: 6px; min-height: 44px; font-size: .82rem; color: var(--mut); }
+  #status { flex: 1; min-width: 0; }
+  #status.err { color: #ff6b6b; }
+  label.sw { display: flex; align-items: center; gap: 8px; cursor: pointer; white-space: nowrap; min-height: 44px; padding-left: 8px; }
+  label.sw input { accent-color: var(--acc); width: 20px; height: 20px; }
+  #sheetbg { position: fixed; inset: 0; background: #000a; z-index: 10; display: none; }
+  #sheet { position: fixed; left: 0; right: 0; bottom: 0; max-width: 560px; margin: 0 auto; height: min(78dvh, 640px); background: var(--panel); border-radius: 22px 22px 0 0; border: 1px solid var(--line); border-bottom: 0; z-index: 11; display: none; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); }
+  body.sheet-open #sheetbg { display: block; }
+  body.sheet-open #sheet { display: flex; }
+  #tabs { display: flex; align-items: center; gap: 2px; padding: 10px 12px 4px; }
+  #tabs .tab { padding: 10px 11px; border-radius: 10px; color: var(--mut); min-height: 44px; }
+  #tabs .tab.on { color: var(--fg); background: var(--line); }
+  #tabs .x { margin-left: auto; padding: 10px 12px; color: var(--mut); min-height: 44px; }
+  #sbody { flex: 1; overflow-y: auto; padding: 8px 16px 20px; }
+  .field { display: block; width: 100%; margin: 6px 0; padding: 12px 14px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; min-height: 48px; }
+  .go { display: block; width: 100%; margin: 12px 0; padding: 14px; border-radius: 12px; background: var(--acc); color: var(--bg); font-weight: 650; min-height: 48px; }
+  .lab { margin: 14px 0 2px; font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: var(--mut); }
+  .item { display: flex; align-items: center; gap: 10px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
+  .item .t { flex: 1; min-width: 0; cursor: pointer; }
+  .item .n { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .m { font-size: .82rem; color: var(--mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .rm { color: var(--mut); padding: 10px; min-width: 44px; min-height: 44px; }
+  .empty-msg { color: var(--mut); padding: 24px 4px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+  .note { font-size: .85rem; color: var(--mut); margin: 6px 0; }
+  .ghost { background: var(--line); color: var(--fg); }
+  /* landscape phones and tablets: two columns, dial on the right */
+  @media (orientation: landscape) and (min-width: 640px) {
+    #app { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto auto auto auto auto 1fr; column-gap: 28px; align-content: start; max-width: 1000px; }
+    header { grid-column: 1 / -1; grid-row: 1; }
+    #now { grid-column: 1; grid-row: 2; margin-top: 4px; }
+    #songbox { grid-column: 1; grid-row: 3; align-self: start; margin-top: 8px; }
+    #row { grid-column: 1; grid-row: 4; justify-content: flex-start; gap: 6px; }
+    #moods { grid-column: 1; grid-row: 5; justify-content: flex-start; }
+    #foot { grid-column: 1; grid-row: 6; align-self: end; }
+    #stage { grid-column: 2; grid-row: 2 / 7; min-height: 0; margin: 0; }
+  }
+  @media (orientation: landscape) and (max-height: 460px) {
+    h1 { font-size: clamp(1.4rem, 5vh, 2rem); margin: 4px 0 0; }
+    #songbox { min-height: 56px; padding-top: 6px; padding-bottom: 6px; }
+    .ib { min-height: 48px; width: 54px; } .ib .l { display: none; }
+    #sub { min-height: 0; } #meta { min-height: 0; }
+    label.sw { min-height: 32px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .badge.live i, #now.tuning h1 { animation: none; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">di<b>a</b>l</div>
+    <nav>
+      <button class="tb ic" id="bSearch" aria-label="Search stations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></button>
+      <button class="tb" id="bBand">Band</button>
+      <button class="tb" id="bSaved">Saved</button>
+      <button class="tb" id="bHeard">Heard</button>
+      <button class="tb ic" id="bMore" aria-label="More: sleep timer, backup"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+    </nav>
+  </header>
+
+  <section id="now" aria-live="polite">
+    <div class="badge" id="badge"><i></i><span id="btxt">Loading</span><span id="clock"></span><img id="logo" alt="" hidden></div>
+    <h1 id="name">Tuning in…</h1>
+    <p id="sub"></p>
+    <p id="meta"></p>
+  </section>
+
+  <div id="songbox" class="empty">
+    <div class="songmain">
+      <div class="lab2">Now playing</div>
+      <div id="songtxt" aria-live="polite"></div>
+      <div id="songtag"></div>
+    </div>
+    <div class="songact">
+      <button class="chip" id="songbtn" hidden>Identify</button>
+      <button class="ib sm" id="songhist" aria-label="Song history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
+    </div>
+  </div>
+
+  <div id="stage">
+    <section id="dialwrap"><canvas id="viz" aria-hidden="true"></canvas>
+      <div id="pointer"></div>
+      <svg id="ring" viewBox="0 0 100 100" aria-hidden="true"><circle id="ringc" cx="50" cy="50" r="49" fill="none" stroke="var(--acc)" stroke-width="1" stroke-linecap="round" stroke-dasharray="307.9" stroke-dashoffset="307.9"></circle></svg>
+      <div id="dial" role="slider" tabindex="0" aria-label="Tuning dial" aria-valuemin="1" aria-valuenow="1" aria-valuemax="1">
+        <svg viewBox="0 0 200 200" id="dialsvg" aria-hidden="true"></svg>
+      </div>
+      <button id="center" aria-label="Play or pause"><svg viewBox="0 0 24 24" id="glyph" fill="currentColor"><path d="M7 4l13 8-13 8z"/></svg></button>
+    </section>
+  </div>
+
+  <div id="row">
+    <button class="ib" id="bPrev" aria-label="Previous station"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg><span class="l">Back</span></button>
+    <button class="ib" id="bDrift" aria-label="Drift to something new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c3-6 6-6 9 0s6 6 9 0"/></svg><span class="l">Surprise</span></button>
+    <button class="ib" id="bHeart" aria-label="Save station" aria-pressed="false"><svg viewBox="0 0 24 24" id="heartsvg" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.6-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.4-7 10-7 10z"/></svg><span class="l">Save</span></button>
+    <button class="ib" id="bShare" aria-label="Share station"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M8 8l4-4 4 4M5 13v6h14v-6"/></svg><span class="l">Share</span></button>
+    <button class="ib" id="bNext" aria-label="Next station"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg><span class="l">Next</span></button>
+  </div>
+  <div id="moods" hidden></div>
+
+  <div id="foot">
+    <div id="status" role="status"></div>
+    <div class="sws"><label class="sw"><input type="checkbox" id="themeon"> Station look</label><label class="sw"><input type="checkbox" id="vizon"> Visuals</label><label class="sw"><input type="checkbox" id="commit"> Commit 60s</label></div>
+  </div>
+</div>
+
+<div id="sheetbg"></div>
+<div id="sheet" role="dialog" aria-label="Library">
+  <div id="tabs">
+    <div id="tabset">
+      <button class="tab" data-t="search">Search</button>
+      <button class="tab" data-t="band">Band</button>
+      <button class="tab" data-t="saved">Saved</button>
+      <button class="tab" data-t="heard">Heard</button>
+      <button class="tab" data-t="songs">Songs</button>
+      <button class="tab" data-t="more">More</button>
+    </div>
+    <button class="x" id="sx" aria-label="Close">Close</button>
+  </div>
+  <div id="sbody"></div>
+</div>
+<audio id="audio" preload="none"></audio>
+
+<script>
+(function () {
+  'use strict';
+
+  var FALLBACK = ['de1.api.radio-browser.info', 'de2.api.radio-browser.info', 'nl1.api.radio-browser.info', 'at1.api.radio-browser.info'];
+  var STEP = 10, COMMIT_MS = 60000, WATCHDOG_MS = 12000, HEARD_AFTER_MS = 20000;
+  var MOODS = ['Chill', 'Energy', 'Focus', 'Late'];
+  var GENRES = ['pop', 'rock', 'jazz', 'classical', 'news', 'talk', 'electronic', 'dance', 'hip hop', 'country', 'reggae', 'folk', 'soul', 'ambient', 'indie', 'world', 'old time radio', 'radio drama', 'vintage', 'oldies', '1940s'];
+  var STOP_TAGS = { music: 1, radio: 1, fm: 1, am: 1, online: 1, internet: 1, live: 1, 'top 40': 1 };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var audio = $('audio');
+
+  function mod(n, m) { return ((n % m) + m) % m; }
+  function lsGet(k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  function shuffle(a) { for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  function secureOnly() { return location.protocol === 'https:'; }
+  function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
+
+  var statusEl = $('status');
+  var statusTimer = null;
+  function setStatus(m, err) { statusEl.textContent = m || ''; statusEl.className = err ? 'err' : ''; clearTimeout(statusTimer); if (m) statusTimer = setTimeout(function () { statusEl.textContent = ''; statusEl.className = ''; }, err ? 9000 : 6000); }
+
+  function timeoutFetch(url, ms) {
+    var c = new AbortController(); var t = setTimeout(function () { c.abort(); }, ms);
+    return fetch(url, { signal: c.signal }).then(function (r) { clearTimeout(t); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }, function (e) { clearTimeout(t); throw e; });
+  }
+  var servers = null;
+  function getServers() {
+    if (servers) return Promise.resolve(servers);
+    return timeoutFetch('https://all.api.radio-browser.info/json/servers', 6000).then(function (l) {
+      var n = l.map(function (s) { return s.name; }).filter(Boolean);
+      servers = shuffle(n.length ? n : FALLBACK.slice()); return servers;
+    }).catch(function () { servers = shuffle(FALLBACK.slice()); return servers; });
+  }
+  function api(path) {
+    return getServers().then(function (srv) {
+      var i = 0;
+      function attempt() {
+        if (i >= srv.length) return Promise.reject(new Error('Station directory unreachable'));
+        return timeoutFetch('https://' + srv[i++] + path, 9000).catch(attempt);
+      }
+      return attempt();
+    });
+  }
+  function httpsParam() { return secureOnly() ? '&is_https=true' : ''; }
+
+  function norm(s) {
+    var lon = Number(s.geo_long);
+    return { id: s.stationuuid, name: (s.name || '').trim() || 'Unnamed', url: s.url_resolved || s.url, country: s.country || '', tags: (s.tags || '').toLowerCase(), bitrate: s.bitrate || 0, codec: (s.codec || '').toUpperCase(), cc: (s.countrycode || '').toUpperCase(), favicon: s.favicon || '', lon: (s.geo_long != null && isFinite(lon) && lon !== 0) ? lon : null };
+  }
+  var TIERS = ['Unrated', 'Low', 'OK', 'Good', 'Hi-fi', 'Lossless'];
+  function codecFamily(s) {
+    var c = s.codec || '';
+    if (c.indexOf('AAC') >= 0) return 'AAC';
+    if (c === 'OGG' || c === 'VORBIS' || c === 'OPUS') return 'OGG';
+    if (c === 'MP3') return 'MP3';
+    if (c === 'FLAC') return 'FLAC';
+    return 'Other';
+  }
+  function effBitrate(s) {
+    var b = s.bitrate || 0, c = s.codec || '';
+    if (!b) return 0;
+    if (c === 'AAC+' || c === 'HE-AAC' || c === 'AACP') return b * 2;
+    if (c.indexOf('AAC') >= 0) return b * 1.33;
+    if (c === 'OGG' || c === 'VORBIS' || c === 'OPUS') return b * 1.3;
+    return b;
+  }
+  function tierOf(s) {
+    if (codecFamily(s) === 'FLAC') return 'Lossless';
+    var e = effBitrate(s);
+    if (!e) return 'Unrated';
+    if (e >= 192) return 'Hi-fi';
+    if (e >= 112) return 'Good';
+    if (e >= 56) return 'OK';
+    return 'Low';
+  }
+  function tierRank(s) { return TIERS.indexOf(tierOf(s)); }
+  function summarize(list) {
+    var q = {}, c = {};
+    list.forEach(function (s) { var t = tierOf(s), f = codecFamily(s); q[t] = (q[t] || 0) + 1; c[f] = (c[f] || 0) + 1; });
+    var qs = TIERS.slice().reverse().filter(function (t) { return q[t]; }).map(function (t) { return t + ' ' + q[t]; }).join(' · ');
+    var cs = Object.keys(c).sort(function (a, b) { return c[b] - c[a]; }).map(function (f) { return f + ' ' + c[f]; }).join(' · ');
+    return { q: qs, c: cs };
+  }
+  function filterQuality(list, codec, minRank) {
+    return list.filter(function (s) { return (!codec || codecFamily(s) === codec) && tierRank(s) >= minRank; });
+  }
+  function cleanList(res) {
+    var seen = {}, out = [];
+    res.forEach(function (r) { var s = norm(r); var k = s.name.toLowerCase(); if (!s.url || seen[k]) return; seen[k] = 1; out.push(s); });
+    return out;
+  }
+
+  var band = { label: '', stations: [] };
+  var posU = 0, tunedId = null, tunedStation = null, dir = 1, errStreak = 0;
+  var dragging = false, settleTimer = null, wdTimer = null, heardTimer = null, lockUntil = 0, wantPlay = false;
+  var saved = lsGet('dial-saved', []), heard = lsGet('dial-heard', []);
+  var commitOn = !!lsGet('dial-commit', false);
+
+  function cur() { var n = band.stations.length; return n ? band.stations[mod(posU, n)] : null; }
+
+  function buildDial() {
+    var svg = $('dialsvg'), NS = 'http://www.w3.org/2000/svg', i, l;
+    var c = document.createElementNS(NS, 'circle');
+    c.setAttribute('cx', 100); c.setAttribute('cy', 100); c.setAttribute('r', 97);
+    c.setAttribute('fill', 'var(--dial)'); c.setAttribute('stroke', 'var(--line)'); c.setAttribute('stroke-width', 1.2);
+    svg.appendChild(c);
+    for (i = 0; i < 360 / STEP; i++) {
+      var major = i % 3 === 0, a = (i * STEP) * Math.PI / 180, r1 = major ? 84 : 89, r2 = 94;
+      l = document.createElementNS(NS, 'line');
+      l.setAttribute('x1', 100 + r1 * Math.sin(a)); l.setAttribute('y1', 100 - r1 * Math.cos(a));
+      l.setAttribute('x2', 100 + r2 * Math.sin(a)); l.setAttribute('y2', 100 - r2 * Math.cos(a));
+      l.setAttribute('stroke', major ? 'var(--fg)' : 'var(--mut)'); l.setAttribute('stroke-width', major ? 1.6 : 1); l.setAttribute('stroke-linecap', 'round');
+      svg.appendChild(l);
+    }
+    var dot = document.createElementNS(NS, 'circle');
+    dot.setAttribute('cx', 100); dot.setAttribute('cy', 74); dot.setAttribute('r', 2.6); dot.setAttribute('fill', 'var(--acc)');
+    svg.appendChild(dot);
+  }
+
+  var ac = null, noiseGain = null, bp = null;
+  function initFx() {
+    if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      ac = new AC();
+      var len = ac.sampleRate * 2, buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+      for (var i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      var src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+      bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2400; bp.Q.value = 0.6;
+      noiseGain = ac.createGain(); noiseGain.gain.value = 0;
+      src.connect(bp); bp.connect(noiseGain); noiseGain.connect(ac.destination); src.start();
+    } catch (e) { ac = null; }
+  }
+  function noise(level, freq) {
+    if (!ac || !noiseGain) return;
+    try { noiseGain.gain.setTargetAtTime(level, ac.currentTime, 0.03); if (freq) bp.frequency.setTargetAtTime(freq, ac.currentTime, 0.05); } catch (e) {}
+  }
+  function burst(ms) { noise(0.16, 2600); setTimeout(function () { noise(0); }, ms || 350); }
+  function tick() { try { if (navigator.vibrate) navigator.vibrate(6); } catch (e) {} }
+
+  function setRot(deg, animate) {
+    var d = $('dial');
+    d.style.transition = animate ? 'transform .35s cubic-bezier(.2,.8,.2,1)' : 'none';
+    d.style.transform = 'rotate(' + deg + 'deg)';
+  }
+  function setBadge(txt, cls) { $('btxt').textContent = txt; $('badge').className = 'badge' + (cls ? ' ' + cls : ''); }
+
+  function solarClock(s) {
+    if (!s || s.lon == null) return '';
+    var t = new Date(Date.now() + (s.lon / 15) * 3600000);
+    var h = t.getUTCHours(), m = t.getUTCMinutes();
+    return ' · ~' + (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m + ' there';
+  }
+  var regionNames = null;
+  try { regionNames = new Intl.DisplayNames(['en'], { type: 'region' }); } catch (e) {}
+  function shortCountry(s) {
+    var name = s.country || '';
+    if (s.cc && s.cc.length === 2) {
+      try { if (regionNames) name = regionNames.of(s.cc) || name; } catch (e) {}
+      var flag = String.fromCodePoint(0x1F1E6 + s.cc.charCodeAt(0) - 65, 0x1F1E6 + s.cc.charCodeAt(1) - 65);
+      return flag + ' ' + name;
+    }
+    return name.replace(/\s+of\s+great\s+britain.*$/i, '');
+  }
+  function splitName(n) {
+    var m = /^(.{2,40}?)(?:\s+[-–—|:]\s*|\s*[-–—|:]\s+)(.+)$/.exec(n);
+    return m ? { main: m[1].trim(), sub: m[2].trim() } : { main: n, sub: '' };
+  }
+  // ---- Station look: re-theme the whole app per station ----
+  var themeOn = lsGet('dial-theme', true), DEF_META = '#0c0c0d', favColors = {};
+  var BRANDS = [
+    // curated brand palettes (bg, ink, accent); extend freely
+    { re: /\bbbc\s*radio\s*1\b/i, bg: '#FFD400', fg: '#111111', acc: '#111111' }
+  ];
+  function hsl2hex(h, s, l) {
+    s /= 100; l /= 100;
+    var k = function (n) { return (n + h / 30) % 12; }, a = s * Math.min(l, 1 - l);
+    var f = function (n) { var v = l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))); return ('0' + Math.round(v * 255).toString(16)).slice(-2); };
+    return '#' + f(0) + f(8) + f(4);
+  }
+  function hashHue(str) { var h = 0, i; for (i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360; return h; }
+  function themeFromHue(h, sat) { return { bg: hsl2hex(h, Math.min(sat == null ? 40 : sat, 45), 11), fg: '#f5f2ec', acc: hsl2hex(h, 88, 62) }; }
+  function applyTheme(t) {
+    var st = document.documentElement.style;
+    ['--bg', '--fg', '--acc', '--mut', '--line', '--dial', '--panel'].forEach(function (v) { st.removeProperty(v); });
+    if (t) {
+      st.setProperty('--bg', t.bg); st.setProperty('--fg', t.fg); st.setProperty('--acc', t.acc);
+      st.setProperty('--mut', 'color-mix(in srgb, ' + t.fg + ' 62%, ' + t.bg + ')');
+      st.setProperty('--line', 'color-mix(in srgb, ' + t.fg + ' 18%, transparent)');
+      st.setProperty('--dial', 'color-mix(in srgb, ' + t.fg + ' 8%, ' + t.bg + ')');
+      st.setProperty('--panel', 'color-mix(in srgb, ' + t.fg + ' 7%, ' + t.bg + ')');
+    }
+    var m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', t ? t.bg : DEF_META);
+  }
+  // dominant hue of a logo; works only if the logo host sends CORS headers, else null
+  function logoHue(url, cb) {
+    var im = new Image(); im.crossOrigin = 'anonymous';
+    im.onload = function () {
+      try {
+        var c = document.createElement('canvas'); c.width = c.height = 24;
+        var x = c.getContext('2d'); x.drawImage(im, 0, 0, 24, 24);
+        var d = x.getImageData(0, 0, 24, 24).data, bins = [], i, tot = 0, best = -1, bw = 0;
+        for (i = 0; i < 36; i++) bins.push({ w: 0, s: 0 });
+        for (i = 0; i < d.length; i += 4) {
+          if (d[i + 3] < 200) continue;
+          var r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), df = mx - mn;
+          if (mx < .2 || df < .15 || mn > .85) continue;
+          var h = mx === r ? ((g - b) / df + 6) % 6 : mx === g ? (b - r) / df + 2 : (r - g) / df + 4;
+          var bi = Math.floor(h * 60 / 10) % 36, w = df * mx;
+          bins[bi].w += w; bins[bi].s += w * (df / mx); tot += w;
+        }
+        for (i = 0; i < 36; i++) if (bins[i].w > bw) { bw = bins[i].w; best = i; }
+        cb(best >= 0 && tot > 1 ? { h: best * 10 + 5, s: Math.round(bins[best].s / bins[best].w * 55) } : null);
+      } catch (e) { cb(null); }
+    };
+    im.onerror = function () { cb(null); };
+    im.src = url;
+  }
+  var themeTimer = null;
+  function brandOf(s) { var i; for (i = 0; i < BRANDS.length; i++) if (BRANDS[i].re.test(s.name)) return BRANDS[i]; return null; }
+  function stationTheme(s) {
+    var b = brandOf(s); if (b) return b;
+    var f = favColors[s.id]; if (f) return themeFromHue(f.h, f.s);
+    return themeFromHue(hashHue(s.name), 40);
+  }
+  function applyStationLook(s) {
+    var lg = $('logo');
+    if (!themeOn || !s) { applyTheme(null); lg.hidden = true; return; }
+    applyTheme(stationTheme(s));
+    if (s.favicon) { lg.onerror = function () { lg.hidden = true; }; lg.onload = function () { lg.hidden = false; }; lg.src = s.favicon; } else lg.hidden = true;
+    clearTimeout(themeTimer);
+    if (s.favicon && !brandOf(s) && !(s.id in favColors)) {
+      themeTimer = setTimeout(function () {
+        logoHue(s.favicon, function (r) {
+          favColors[s.id] = r;
+          if (themeOn && tunedStation && tunedStation.id === s.id && r) applyTheme(themeFromHue(r.h, r.s));
+        });
+      }, 300);
+    }
+  }
+  // ---- Visuals: decorative equalizer ring + beat glow (NOT analysing the real audio; streams rarely allow it) ----
+  var vizOn = lsGet('dial-viz', true);
+  var reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  (function () {
+    var cv = $('viz'), ctx = cv.getContext('2d'), N = 72, vals = [], ph = [], fr = [], i, accCol = '#ff6a2b', lastCol = -1e9, last = 0, aud = $('audio'), wrap = $('dialwrap');
+    for (i = 0; i < N; i++) { vals.push(0.05); ph.push(Math.random() * 6.28); fr.push(1.2 + Math.random() * 3.2); }
+    function frame(now) {
+      requestAnimationFrame(frame);
+      if (now - last < 33) return; last = now;
+      var dpr = Math.min(window.devicePixelRatio || 1, 2), w = cv.clientWidth, h = cv.clientHeight;
+      if (!w) return;
+      if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+      if (!vizOn) { wrap.style.setProperty('--pulse', 0); return; }
+      if (now - lastCol > 250) { lastCol = now; accCol = getComputedStyle(document.documentElement).getPropertyValue('--acc').trim() || accCol; }
+      var t = now / 1000, playing = !aud.paused && !aud.ended, tuning = $('now').classList.contains('tuning');
+      var st = tunedStation, bpm = 92 + (st ? hashHue(st.name) % 40 : 20), beat = Math.pow(Math.max(0, Math.sin(t * bpm / 60 * Math.PI)), 6);
+      var cx = w / 2, cy = h / 2, R0 = wrap.clientWidth / 2 + 6, maxL = Math.max(8, cy - R0 - 2), env = reduceMotion ? 0 : 1;
+      ctx.lineCap = 'round'; ctx.strokeStyle = accCol; ctx.lineWidth = Math.max(2, (2 * Math.PI * R0) / N * 0.45);
+      for (i = 0; i < N; i++) {
+        var k = Math.min(i, N - i) / (N / 2), shape = 1 - 0.6 * k, target;
+        if (tuning) target = 0.25 + Math.random() * 0.6;
+        else if (playing) target = 0.14 + env * shape * (0.28 + 0.34 * (0.5 + 0.5 * Math.sin(t * fr[i] + ph[i])) + 0.4 * beat * (1 - k));
+        else target = 0.06;
+        vals[i] += (target - vals[i]) * (target > vals[i] ? 0.5 : 0.18);
+        var a = (i / N) * Math.PI * 2 - Math.PI / 2, l = 3 + vals[i] * maxL;
+        ctx.globalAlpha = 0.45 + 0.55 * Math.min(1, vals[i] * 1.4);
+        ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * R0, cy + Math.sin(a) * R0); ctx.lineTo(cx + Math.cos(a) * (R0 + l), cy + Math.sin(a) * (R0 + l)); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      wrap.style.setProperty('--pulse', playing && !tuning ? (0.25 + 0.75 * beat * env).toFixed(2) : 0);
+    }
+    requestAnimationFrame(frame);
+  })();
+  function showStation(s) {
+    if (!s) { $('name').textContent = 'No stations'; $('sub').textContent = ''; $('meta').textContent = ''; return; }
+    var parts = splitName(s.name);
+    $('name').textContent = parts.main; $('sub').textContent = parts.sub;
+    var tr = tierOf(s);
+    $('meta').textContent = [shortCountry(s), s.tags.split(',')[0].trim(), tr === 'Unrated' ? '' : tr + ' · ' + (s.codec && s.codec !== 'UNKNOWN' ? s.codec + ' ' : '') + (s.bitrate ? s.bitrate + 'k' : '')].filter(Boolean).join(' · ');
+    $('clock').textContent = solarClock(s) + sleepTxt();
+    var n = band.stations.length;
+    var d = $('dial'); d.setAttribute('aria-valuemax', String(Math.max(1, n))); d.setAttribute('aria-valuenow', String(mod(posU, Math.max(1, n)) + 1));
+    d.setAttribute('aria-valuetext', s.name);
+    refreshHeart();
+    applyStationLook(s);
+  }
+  function setGlyph(playing) {
+    $('glyph').innerHTML = playing ? '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>' : '<path d="M7 4l13 8-13 8z"/>';
+  }
+
+  function locked() { return commitOn && Date.now() < lockUntil; }
+  function lockedMsg() { setStatus('Committed. ' + Math.ceil((lockUntil - Date.now()) / 1000) + 's before you can move on.'); }
+  function updateRing() {
+    var c = $('ringc'), left = lockUntil - Date.now();
+    if (!commitOn || left <= 0) { c.setAttribute('stroke-dashoffset', '307.9'); return; }
+    c.setAttribute('stroke-dashoffset', String(307.9 * (1 - left / COMMIT_MS)));
+  }
+  setInterval(function () {
+    updateRing();
+    if (commitOn && locked()) setStatus('Committed · ' + Math.ceil((lockUntil - Date.now()) / 1000) + 's');
+    else if (commitOn && lockUntil && Date.now() >= lockUntil) { lockUntil = 0; setStatus('You can move on.'); }
+    var s = tunedStation || cur(); if (s && !dragging) $('clock').textContent = solarClock(s) + sleepTxt();
+  }, 500);
+
+  function clearTimers() { clearTimeout(wdTimer); clearTimeout(heardTimer); }
+
+  function tuneIndex(i, force) {
+    var n = band.stations.length; if (!n) return;
+    var s = band.stations[mod(i, n)];
+    clearTimers(); npReset(); retry.played = false; retry.n = 0; clearTimeout(retry.timer); clearTimeout(retry.stall);
+    tunedId = s.id; tunedStation = s; showStation(s);
+    $('now').classList.remove('tuning');
+    setBadge('Connecting', '');
+    wantPlay = true; audio.muted = false; audio.src = s.url;
+    var p = audio.play();
+    if (p && p.catch) p.catch(function (e) { if (e && e.name !== 'AbortError' && e.name !== 'NotAllowedError') lostSignal(); });
+    wdTimer = setTimeout(function () { if (wantPlay && (audio.paused || audio.readyState < 3)) lostSignal(); }, WATCHDOG_MS);
+    if (commitOn && !force) lockUntil = Date.now() + COMMIT_MS; else lockUntil = 0;
+    lsSet('dial-last', s);
+    updateMedia(s);
+  }
+
+  // ---- Lock screen / notification controls ----
+  function mediaArt() { return /^https?:$/.test(location.protocol) ? [{ src: new URL('icon-512.png', location.href).href, sizes: '512x512', type: 'image/png' }] : []; }
+  function setMediaMeta(title, artist) {
+    if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
+    try { navigator.mediaSession.metadata = new MediaMetadata({ title: title, artist: artist, album: 'Dial', artwork: mediaArt() }); } catch (e) {}
+  }
+  function setPlayState(st) { try { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = st; } catch (e) {} }
+  function initMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    var h = { play: function () { toggle(); }, pause: function () { pauseNow(); }, stop: function () { pauseNow(); }, nexttrack: function () { stepBy(1); }, previoustrack: function () { stepBy(-1); } };
+    Object.keys(h).forEach(function (k) { try { navigator.mediaSession.setActionHandler(k, h[k]); } catch (e) {} });
+  }
+  function updateMedia(s) { setMediaMeta(s.name, s.country || 'Live radio'); }
+
+  // ---- Reconnect: retry the same station a few times after a dropped connection ----
+  var retry = { n: 0, played: false, timer: null, ok: null, stall: null };
+  function reconnect() {
+    if (!tunedStation || !wantPlay || !retry.played || retry.n >= 3) return false;
+    var d = [800, 2500, 6000][retry.n++], s = tunedStation;
+    clearTimeout(retry.timer); clearTimeout(wdTimer);
+    setBadge('Reconnecting', ''); setStatus('Connection dropped. Reconnecting (' + retry.n + '/3)…');
+    retry.timer = setTimeout(function () {
+      if (!wantPlay || tunedStation !== s) return;
+      audio.src = s.url; var p = audio.play(); if (p && p.catch) p.catch(function () { lostSignal(); });
+      wdTimer = setTimeout(function () { if (wantPlay && (audio.paused || audio.readyState < 3)) lostSignal(); }, WATCHDOG_MS);
+    }, d);
+    return true;
+  }
+
+  // ---- Sleep timer ----
+  var sleepT = { end: 0, timer: null, iv: null };
+  function sleepTxt() { return sleepT.end ? ' · sleep ' + Math.max(1, Math.ceil((sleepT.end - Date.now()) / 60000)) + 'm' : ''; }
+  function setSleep(min) {
+    clearTimeout(sleepT.timer); clearInterval(sleepT.iv); audio.volume = 1;
+    if (!min) { sleepT.end = 0; var c0 = tunedStation || cur(); if (c0) $('clock').textContent = solarClock(c0); setStatus('Sleep timer off.'); return; }
+    sleepT.end = Date.now() + min * 60000;
+    sleepT.timer = setTimeout(sleepFire, min * 60000);
+    var cs = tunedStation || cur(); if (cs) $('clock').textContent = solarClock(cs) + sleepTxt();
+    setStatus('Sleep timer: stopping in ' + min + ' min.');
+  }
+  function sleepFire() {
+    sleepT.end = 0; var t0 = Date.now(), FADE = 8000;
+    clearInterval(sleepT.iv);
+    sleepT.iv = setInterval(function () {
+      var k = 1 - (Date.now() - t0) / FADE;
+      if (k <= 0 || audio.paused) { clearInterval(sleepT.iv); pauseNow(); audio.volume = 1; setStatus('Sleep timer: stopped. Goodnight.'); }
+      else audio.volume = Math.max(0, k);
+    }, 200);
+  }
+
+  function lostSignal() {
+    clearTimers();
+    if (!tunedId || !wantPlay) return;
+    if (navigator.onLine === false) { setBadge('Offline', 'bad'); setGlyph(false); setStatus('You’re offline. Playback resumes when the connection returns.'); return; }
+    if (reconnect()) return;
+    errStreak++;
+    setBadge('No signal', 'bad'); setGlyph(false);
+    burst(500);
+    if (errStreak <= 5 && band.stations.length > 1) {
+      setStatus('Lost signal. Retuning…');
+      setTimeout(function () { lockUntil = 0; stepBy(dir || 1, true); }, 700);
+    } else {
+      errStreak = 0; setStatus('Several stations are down. Turn the dial to find another.', true);
+    }
+  }
+
+  function stepBy(d, force) {
+    if (!force && locked()) { lockedMsg(); return; }
+    if (!band.stations.length) return;
+    dir = d > 0 ? 1 : -1;
+    initFx(); noise(0.14, 2200);
+    audio.muted = true;
+    $('now').classList.add('tuning');
+    posU += d; setRot(posU * STEP, true); tick();
+    showStation(cur());
+    scheduleSettle(force);
+  }
+  function scheduleSettle(force) {
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(function () { settleTimer = null; noise(0); tuneIndex(posU, force); }, 380);
+  }
+
+  function toggle() {
+    initFx();
+    if (!band.stations.length) return;
+    if (!tunedId) { tuneIndex(posU); return; }
+    if (audio.paused) tuneIndex(posU, true); else pauseNow();
+  }
+  function pauseNow() { wantPlay = false; clearTimeout(wdTimer); npReset(); audio.pause(); }
+
+  audio.addEventListener('playing', function () {
+    clearTimeout(wdTimer); errStreak = 0; setBadge('Live', 'live'); setGlyph(true); setPlayState('playing');
+    retry.played = true; clearTimeout(retry.stall); clearTimeout(retry.ok); retry.ok = setTimeout(function () { retry.n = 0; }, 15000);
+    $('now').classList.remove('tuning');
+    var id = tunedId, s = tunedStation;
+    clearTimeout(heardTimer);
+    heardTimer = setTimeout(function () { if (tunedId === id && s) logHeard(s); }, HEARD_AFTER_MS);
+    npBegin();
+  });
+  audio.addEventListener('waiting', function () {
+    if (!tunedId) return;
+    setBadge('Buffering', ''); clearTimeout(retry.stall);
+    retry.stall = setTimeout(function () { if (wantPlay && tunedId && audio.readyState < 3) lostSignal(); }, 15000);
+  });
+  audio.addEventListener('ended', function () { if (tunedId && wantPlay) lostSignal(); });
+  window.addEventListener('offline', function () { if (tunedId && wantPlay) { setBadge('Offline', 'bad'); setStatus('You’re offline. Playback resumes when the connection returns.'); } });
+  window.addEventListener('online', function () {
+    if (tunedId && wantPlay && tunedStation && (audio.paused || audio.readyState < 3)) { retry.played = true; retry.n = 0; setStatus('Back online. Reconnecting…'); if (!reconnect()) tuneIndex(posU, true); }
+  });
+  audio.addEventListener('pause', function () { setPlayState('paused'); if (tunedId && !dragging && !settleTimer) { setBadge('Paused', ''); } setGlyph(false); });
+  audio.addEventListener('error', function () { if (tunedId) lostSignal(); });
+
+  function logHeard(s) {
+    if (heard.length && heard[0].id === s.id) { heard[0].ts = Date.now(); }
+    else { heard.unshift({ id: s.id, name: s.name, url: s.url, country: s.country, tags: s.tags, lon: s.lon, bitrate: s.bitrate, codec: s.codec, cc: s.cc, favicon: s.favicon || '', ts: Date.now() }); }
+    heard = heard.slice(0, 80); lsSet('dial-heard', heard);
+  }
+
+  var dial = $('dial'), lastAng = 0, accum = 0, startU = 0, moved = false;
+  function angOf(e) { var r = dial.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180 / Math.PI; }
+  dial.addEventListener('pointerdown', function (e) {
+    if (locked()) { lockedMsg(); return; }
+    if (!band.stations.length) return;
+    initFx();
+    dragging = true; moved = false; accum = 0; startU = posU; lastAng = angOf(e);
+    try { dial.setPointerCapture(e.pointerId); } catch (x) {}
+    clearTimeout(settleTimer); settleTimer = null;
+    audio.muted = true; noise(0.12, 2200); $('now').classList.add('tuning');
+    e.preventDefault();
+  });
+  dial.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    var a = angOf(e), d = a - lastAng;
+    if (d > 180) d -= 360; if (d < -180) d += 360;
+    lastAng = a; accum += d; if (Math.abs(accum) > 2) moved = true;
+    if (d !== 0) dir = d > 0 ? 1 : -1;
+    var pf = startU + accum / STEP, nu = Math.round(pf);
+    if (nu !== posU) { posU = nu; tick(); showStation(cur()); }
+    setRot(pf * STEP, false);
+    noise(Math.min(0.28, 0.1 + Math.abs(d) * 0.012), 1800 + Math.min(2500, Math.abs(d) * 90));
+  });
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    setRot(posU * STEP, true);
+    if (!moved || posU === startU) { noise(0); audio.muted = false; $('now').classList.remove('tuning'); showStation(tunedStation || cur()); return; }
+    scheduleSettle(false);
+  }
+  dial.addEventListener('pointerup', endDrag);
+  dial.addEventListener('pointercancel', endDrag);
+  dial.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { stepBy(1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { stepBy(-1); e.preventDefault(); }
+  });
+  var wheelAcc = 0;
+  dial.addEventListener('wheel', function (e) { e.preventDefault(); wheelAcc += e.deltaY; if (Math.abs(wheelAcc) > 40) { stepBy(wheelAcc > 0 ? 1 : -1); wheelAcc = 0; } }, { passive: false });
+  document.addEventListener('keydown', function (e) {
+    var t = e.target && e.target.tagName; if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
+    if (e.key === ' ' && e.target === document.body) { toggle(); e.preventDefault(); }
+    if (e.key === 'Escape') closeSheet();
+  });
+
+  $('center').onclick = toggle;
+  $('bPrev').onclick = function () { stepBy(-1); };
+  $('bNext').onclick = function () { stepBy(1); };
+  $('bDrift').onclick = function () { drift(); };
+
+  function isSaved(s) { return !!s && saved.some(function (x) { return x.id === s.id; }); }
+  function refreshHeart() {
+    var s = tunedStation && !dragging && !$('now').classList.contains('tuning') ? tunedStation : cur();
+    var on = isSaved(s), b = $('bHeart');
+    b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on));
+    $('heartsvg').setAttribute('fill', on ? 'currentColor' : 'none');
+  }
+  var moodTimer = null;
+  function showMoods(s) {
+    var box = $('moods'); box.textContent = ''; box.hidden = false;
+    MOODS.forEach(function (m) {
+      var c = el('button', 'chip', m);
+      c.onclick = function () { var x = saved.filter(function (q) { return q.id === s.id; })[0]; if (x) { x.mood = m; lsSet('dial-saved', saved); } box.hidden = true; setStatus('Saved to ' + m + '.'); };
+      box.appendChild(c);
+    });
+    clearTimeout(moodTimer); moodTimer = setTimeout(function () { box.hidden = true; }, 5000);
+  }
+  $('bHeart').onclick = function () {
+    var s = tunedStation || cur(); if (!s) return;
+    if (isSaved(s)) { saved = saved.filter(function (x) { return x.id !== s.id; }); lsSet('dial-saved', saved); $('moods').hidden = true; setStatus('Removed from Saved.'); }
+    else { saved.unshift({ id: s.id, name: s.name, url: s.url, country: s.country, tags: s.tags, lon: s.lon, bitrate: s.bitrate, codec: s.codec, cc: s.cc, favicon: s.favicon || '', mood: '', ts: Date.now() }); lsSet('dial-saved', saved); setStatus('Saved. Pick a mood, or ignore.'); showMoods(s); }
+    refreshHeart();
+  };
+
+  function copyText(t) {
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(t);
+    return Promise.reject(new Error('no clipboard'));
+  }
+  $('bShare').onclick = function () {
+    var s = tunedStation || cur(); if (!s) return;
+    var hosted = /^https?:$/.test(location.protocol);
+    var url = hosted ? location.origin + location.pathname + '#s=' + s.id : '';
+    var text = s.name + (s.country ? ' (' + s.country + ')' : '') + ' on Dial' + (url ? '' : ': ' + s.url);
+    if (navigator.share) { navigator.share({ title: s.name, text: text, url: url || undefined }).catch(function () {}); return; }
+    copyText(url ? text + ' ' + url : text).then(function () { setStatus('Copied to clipboard.'); }, function () { setStatus('Couldn’t copy. Station: ' + s.name, true); });
+  };
+
+  $('themeon').checked = themeOn;
+  $('themeon').onchange = function () { themeOn = this.checked; lsSet('dial-theme', themeOn); applyStationLook(tunedStation || cur()); };
+  $('vizon').checked = vizOn;
+  $('vizon').onchange = function () { vizOn = this.checked; lsSet('dial-viz', vizOn); };
+  $('commit').checked = commitOn;
+  $('commit').onchange = function () { commitOn = this.checked; lsSet('dial-commit', commitOn); if (!commitOn) { lockUntil = 0; updateRing(); setStatus('Commit mode off.'); } else { setStatus('Commit mode on: each station holds you for 60 seconds.'); } };
+
+  async function loadBand(o) {
+    var p = '/json/stations/search?hidebroken=true&order=clickcount&reverse=true&limit=' + (o.big ? 400 : 150) + httpsParam();
+    if (o.cc) p += '&countrycode=' + encodeURIComponent(o.cc);
+    if (o.tag) p += '&tag=' + encodeURIComponent(o.tag);
+    if (o.q) p += '&name=' + encodeURIComponent(o.q);
+    var res = await api(p), list = cleanList(res);
+    return list;
+  }
+  function setBand(label, list, startId) {
+    band = { label: label, stations: list };
+    var idx = 0;
+    if (startId) { for (var i = 0; i < list.length; i++) if (list[i].id === startId) { idx = i; break; } }
+    posU = idx; setRot(posU * STEP, false);
+    showStation(cur());
+  }
+
+  function tasteTag() {
+    var counts = {};
+    function add(list, w) { list.forEach(function (s) { (s.tags || '').split(',').forEach(function (t) { t = t.trim(); if (t.length < 3 || STOP_TAGS[t]) return; counts[t] = (counts[t] || 0) + w; }); }); }
+    add(heard, 1); add(saved, 3);
+    var top = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 3);
+    if (!top.length) return { tag: GENRES[Math.floor(Math.random() * GENRES.length)], guess: true };
+    var tot = top.reduce(function (a, t) { return a + counts[t]; }, 0), r = Math.random() * tot, pick = top[0];
+    for (var i = 0; i < top.length; i++) { r -= counts[top[i]]; if (r <= 0) { pick = top[i]; break; } }
+    return { tag: pick, guess: false };
+  }
+  async function drift() {
+    if (locked()) { lockedMsg(); return; }
+    initFx();
+    var t = tasteTag();
+    setStatus(t.guess ? 'Drifting. No history yet, so this is a guess…' : 'Drifting near “' + t.tag + '”…');
+    try {
+      var res = await api('/json/stations/search?hidebroken=true&order=random&limit=60&bitrateMin=48&tag=' + encodeURIComponent(t.tag) + httpsParam());
+      var list = cleanList(res);
+      if (!list.length) { setStatus('Nothing drifted in. Try again.', true); return; }
+      band = { label: 'Drift · ' + t.tag, stations: list }; posU = 0; setRot(0, true);
+      burst(300); tuneIndex(0);
+      setStatus('Drift · ' + t.tag + (t.guess ? ' (a guess)' : ''));
+    } catch (e) { setStatus('Drift failed: ' + e.message, true); }
+  }
+
+  var np = { id: null, token: 0, timer: null, mode: null };
+  var songs = lsGet('dial-songs', []);
+  var song = { kind: 'none', text: '', src: '' };
+
+  function renderSong() {
+    var box = $('songbox'), t = $('songtxt'), b = $('songbtn');
+    if (song.kind === 'none') { box.classList.add('empty'); return; }
+    box.classList.remove('empty'); b.hidden = true; t.className = ''; t.textContent = ''; $('songtag').textContent = '';
+    if (song.kind === 'title') {
+      t.textContent = song.text;
+      $('songtag').textContent = song.src === 'identified' ? 'Identified by AudD' : 'From the station';
+    } else {
+      t.className = 'mut'; t.textContent = song.text;
+      if (song.kind === 'nometa') b.hidden = false;
+    }
+  }
+  function setSong(kind, text, src) { song = { kind: kind, text: text || '', src: src || '' }; renderSong(); }
+
+  function cleanTitle(raw, st) {
+    if (raw == null) return '';
+    var t = String(raw).replace(/&amp;/g, '&').replace(/&#0?39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+    if (t.length < 3) return '';
+    var n = ((st && st.name) || '').toLowerCase();
+    if (n && t.toLowerCase() === n) return '';
+    if (/^(n\/a|unknown|advert(isement|s)?|commercials?|jingles?|station id|on air|live|radio|no title|untitled|-+)$/i.test(t)) return '';
+    return t;
+  }
+  function addHistory(t, src, st) {
+    if (songs.length && songs[0].text === t) return;
+    songs.unshift({ text: t, station: st ? st.name : '', ts: Date.now(), src: src });
+    songs = songs.slice(0, 100); lsSet('dial-songs', songs);
+  }
+  function applySong(raw, src, st) {
+    var t = cleanTitle(raw, st || tunedStation);
+    if (!t) { setSong('nometa', 'No song title right now.'); return; }
+    if (song.kind === 'title' && song.text === t) return;
+    addHistory(t, src, st || tunedStation);
+    setSong('title', t, src);
+    if (tunedStation) setMediaMeta(t, tunedStation.name);
+  }
+
+  function jget(url, ms, asText) {
+    var c = new AbortController(), to = setTimeout(function () { c.abort(); }, ms);
+    return fetch(url, { signal: c.signal }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return asText ? r.text() : r.json(); })
+      .finally(function () { clearTimeout(to); });
+  }
+  async function npIcy(s) {
+    var c = new AbortController(), to = setTimeout(function () { c.abort(); }, 9000);
+    try {
+      var r = await fetch(s.url, { headers: { 'Icy-MetaData': '1' }, signal: c.signal });
+      var mi = parseInt(r.headers.get('icy-metaint') || '', 10);
+      if (!r.ok || !mi || !r.body) return undefined;
+      var reader = r.body.getReader(), buf = new Uint8Array(0), need = mi + 1, sized = false;
+      while (buf.length < need) {
+        var x = await reader.read(); if (x.done) return undefined;
+        var nb = new Uint8Array(buf.length + x.value.length); nb.set(buf); nb.set(x.value, buf.length); buf = nb;
+        if (!sized && buf.length > mi) { need = mi + 1 + buf[mi] * 16; sized = true; }
+      }
+      var len = buf[mi] * 16;
+      if (!len) return '';
+      var raw = buf.slice(mi + 1, mi + 1 + len), txt;
+      try { txt = new TextDecoder('utf-8', { fatal: true }).decode(raw); } catch (e) { txt = new TextDecoder('latin1').decode(raw); }
+      var m = /StreamTitle='([\s\S]*?)';\s*(?:StreamUrl=|\0|$)/.exec(txt) || /StreamTitle='([\s\S]*?)'/.exec(txt);
+      return m ? m[1] : '';
+    } finally { clearTimeout(to); try { c.abort(); } catch (e) {} }
+  }
+  async function npXsl(s) {
+    var u = new URL(s.url), j = await jget(u.origin + '/status-json.xsl', 6000);
+    var src = j && j.icestats && j.icestats.source; if (!src) return undefined;
+    var list = Array.isArray(src) ? src : [src], pick = list[0];
+    for (var i = 0; i < list.length; i++) { var lu = list[i].listenurl || ''; if (lu && u.pathname.length > 1 && lu.slice(-u.pathname.length) === u.pathname) { pick = list[i]; break; } }
+    var t = pick.title || '';
+    if (pick.artist && t && t.indexOf(pick.artist) < 0) t = pick.artist + ' - ' + t;
+    return t;
+  }
+  async function npSeven(s) {
+    var u = new URL(s.url), h2 = await jget(u.origin + '/7.html', 6000, true);
+    var f = h2.replace(/<[^>]*>/g, '').trim().split(',');
+    if (f.length < 7 || !/^\d+$/.test(f[0].trim())) return undefined;
+    return f.slice(6).join(',');
+  }
+  async function npShout(s) {
+    var u = new URL(s.url), j = await jget(u.origin + '/stats?sid=1&json=1', 6000);
+    if (!j || j.songtitle == null) return undefined;
+    return j.songtitle;
+  }
+  var NP = [['icy', npIcy], ['xsl', npXsl], ['seven', npSeven], ['shout', npShout]];
+  async function npPoll(token) {
+    var s = tunedStation; if (!s || token !== np.token) return;
+    var list = np.mode && np.mode !== 'none' ? NP.filter(function (m) { return m[0] === np.mode; }) : NP;
+    var res = await Promise.all(list.map(function (m) {
+      return m[1](s).then(function (t) { return t === undefined ? null : { m: m[0], t: t }; }, function () { return null; });
+    }));
+    if (token !== np.token) return;
+    var hits = res.filter(Boolean);
+    if (!hits.length) {
+      if (np.mode && np.mode !== 'none') { np.timer = setTimeout(function () { npPoll(token); }, 30000); return; }
+      np.mode = 'none'; setSong('nometa', 'This station doesn’t share song info.'); return;
+    }
+    var hit = hits.filter(function (x) { return cleanTitle(x.t, s); })[0] || hits[0];
+    np.mode = hit.m; applySong(hit.t, 'stream', s);
+    np.timer = setTimeout(function () { npPoll(token); }, 20000);
+  }
+  function npReset() { clearTimeout(np.timer); np.token++; np.id = null; np.mode = null; setSong('none'); }
+  function npBegin() {
+    if (!tunedStation || np.id === tunedId) return;
+    np.id = tunedId; np.mode = null; np.token++; clearTimeout(np.timer);
+    setSong('checking', 'Looking for song info…');
+    npPoll(np.token);
+  }
+
+  function encodeWav(f, sr) {
+    var n = f.length, b = new ArrayBuffer(44 + n * 2), v = new DataView(b), i;
+    function w(o, s) { for (var k = 0; k < s.length; k++) v.setUint8(o + k, s.charCodeAt(k)); }
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true);
+    v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+    for (i = 0; i < n; i++) { var x = Math.max(-1, Math.min(1, f[i])); v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true); }
+    return b;
+  }
+  async function blobToWav(blob) {
+    var AC = window.AudioContext || window.webkitAudioContext, c = new AC();
+    try {
+      var ab = await blob.arrayBuffer();
+      var dec = await new Promise(function (res, rej) { c.decodeAudioData(ab, res, rej); });
+      var sr = 22050, OC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      var oc = new OC(1, Math.max(1, Math.ceil(dec.duration * sr)), sr), src = oc.createBufferSource();
+      src.buffer = dec; src.connect(oc.destination); src.start();
+      var out = await oc.startRendering();
+      return encodeWav(out.getChannelData(0), sr);
+    } finally { try { c.close(); } catch (e) {} }
+  }
+  var identifying = false;
+  async function identify() {
+    if (identifying) return;
+    var tok = lsGet('dial-audd', '');
+    if (!tok) { openSheet('songs'); setStatus('Add your AudD token to use Identify.'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { setSong('nometa', 'This browser can’t record audio for Identify.'); return; }
+    identifying = true;
+    try {
+      setSong('busy', 'Listening for 10 seconds… hold the phone near the speaker.');
+      var stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      var rec = new MediaRecorder(stream), chunks = [];
+      rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+      var stopped = new Promise(function (r) { rec.onstop = r; });
+      rec.start();
+      await new Promise(function (r) { setTimeout(r, 10000); });
+      rec.stop(); await stopped;
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      setSong('busy', 'Matching…');
+      var wav = await blobToWav(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }));
+      var fd = new FormData();
+      fd.append('api_token', tok); fd.append('return', 'apple_music,spotify');
+      fd.append('file', new Blob([wav], { type: 'audio/wav' }), 'clip.wav');
+      var r = await fetch('https://api.audd.io/', { method: 'POST', body: fd }), j = await r.json();
+      if (j && j.status === 'success' && j.result && j.result.title) { applySong((j.result.artist ? j.result.artist + ' - ' : '') + j.result.title, 'identified', tunedStation); }
+      else if (j && j.status === 'success') { setSong('nometa', 'No match. Try again when the song is louder or clearer.'); }
+      else { setSong('nometa', 'AudD said: ' + ((j && j.error && j.error.error_message) || 'unknown error')); }
+    } catch (e) {
+      setSong('nometa', e && e.name === 'NotAllowedError' ? 'Microphone permission was blocked.' : 'Identify failed: ' + (e && e.message ? e.message : e));
+    } finally { identifying = false; }
+  }
+  $('songbtn').onclick = identify;
+  $('songhist').onclick = function () { openSheet('songs'); };
+
+  function renderSongsTab(box) {
+    box.appendChild(el('div', 'lab', 'Identify with AudD (optional)'));
+    var note = el('div', '', 'Some stations don’t broadcast song titles. Identify records 10 seconds through your microphone and sends the clip to AudD (audd.io) to match it. You need your own token from dashboard.audd.io. AudD’s docs mention a shared test token limited to 10 requests a day.');
+    note.style.cssText = 'font-size:.85rem;color:var(--mut);margin:4px 0 8px'; box.appendChild(note);
+    var inp = el('input', 'field'); inp.type = 'password'; inp.placeholder = lsGet('dial-audd', '') ? 'Token saved. Paste a new one to replace it.' : 'AudD API token'; inp.autocomplete = 'off'; box.appendChild(inp);
+    var save = el('button', 'go', 'Save token'); box.appendChild(save);
+    save.onclick = function () { var v = inp.value.trim(); if (!v) { lsSet('dial-audd', ''); save.textContent = 'Token cleared'; return; } lsSet('dial-audd', v); inp.value = ''; save.textContent = 'Saved'; };
+    box.appendChild(el('div', 'lab', 'Songs you’ve seen'));
+    listItems(box, songs.map(function (x) { return { name: x.text, station: x.station, ts: x.ts, src: x.src }; }), function (s) { return [s.station, ago(s.ts), s.src === 'identified' ? 'identified' : ''].filter(Boolean).join(' · '); },
+      function (i) { copyText(songs[i].text).then(function () { setStatus('Copied: ' + songs[i].text); closeSheet(); }, function () { setStatus('Couldn’t copy.', true); }); },
+      function (i) { songs.splice(i, 1); lsSet('dial-songs', songs); renderSheet(); });
+  }
+
+  function cleanStation(x) {
+    if (!x || typeof x.id !== 'string' || typeof x.url !== 'string' || !/^https?:\/\//i.test(x.url)) return null;
+    var lon = Number(x.lon);
+    return { id: x.id.slice(0, 64), name: String(x.name || 'Unnamed').slice(0, 120), url: x.url.slice(0, 500), country: String(x.country || '').slice(0, 80), tags: String(x.tags || '').slice(0, 200),
+      lon: (x.lon != null && isFinite(lon)) ? lon : null, bitrate: Number(x.bitrate) || 0, codec: String(x.codec || '').slice(0, 16), cc: String(x.cc || '').slice(0, 2),
+      favicon: /^https?:\/\//i.test(x.favicon || '') ? String(x.favicon).slice(0, 500) : '', mood: MOODS.indexOf(x.mood) >= 0 ? x.mood : '', ts: Number(x.ts) || Date.now() };
+  }
+  function mergeStations(cur, inc, cap) {
+    var have = {}, added = 0; cur.forEach(function (x) { have[x.id] = 1; });
+    (Array.isArray(inc) ? inc : []).forEach(function (r) { var c = cleanStation(r); if (c && !have[c.id] && cur.length < cap) { have[c.id] = 1; cur.push(c); added++; } });
+    return added;
+  }
+  function exportData() {
+    var data = { app: 'dial', version: 1, exported: new Date().toISOString(), saved: saved, heard: heard, songs: songs };
+    var blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'dial-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    return data;
+  }
+  function importData(text) {
+    var j; try { j = JSON.parse(text); } catch (e) { throw new Error('That file isn’t a Dial backup.'); }
+    if (!j || j.app !== 'dial' || typeof j !== 'object') throw new Error('That file isn’t a Dial backup.');
+    var a = mergeStations(saved, j.saved, 500), b = mergeStations(heard, j.heard, 80), c = 0;
+    var seen = {}; songs.forEach(function (x) { seen[x.text + '|' + x.ts] = 1; });
+    (Array.isArray(j.songs) ? j.songs : []).forEach(function (x) {
+      if (!x || typeof x.text !== 'string' || songs.length >= 100) return;
+      var k = x.text + '|' + x.ts; if (seen[k]) return; seen[k] = 1;
+      songs.push({ text: x.text.slice(0, 200), station: String(x.station || '').slice(0, 120), ts: Number(x.ts) || Date.now(), src: x.src === 'identified' ? 'identified' : 'stream' }); c++;
+    });
+    lsSet('dial-saved', saved); lsSet('dial-heard', heard); lsSet('dial-songs', songs); refreshHeart();
+    return { saved: a, heard: b, songs: c };
+  }
+  function closeSheet() { document.body.classList.remove('sheet-open'); }
+  var sheetTab = 'band', countriesLoaded = false, savedMood = '';
+  function openSheet(t) { sheetTab = t; document.body.classList.add('sheet-open'); renderSheet(); }
+  $('bSearch').onclick = function () { openSheet('search'); };
+  $('bMore').onclick = function () { openSheet('more'); };
+  $('bBand').onclick = function () { openSheet('band'); };
+  $('bSaved').onclick = function () { openSheet('saved'); };
+  $('bHeard').onclick = function () { openSheet('heard'); };
+  $('sx').onclick = closeSheet; $('sheetbg').onclick = closeSheet;
+  Array.prototype.forEach.call(document.querySelectorAll('#tabs .tab'), function (b) { b.onclick = function () { sheetTab = b.dataset.t; renderSheet(); }; });
+
+  function ago(ts) { var m = Math.round((Date.now() - ts) / 60000); if (m < 1) return 'just now'; if (m < 60) return m + 'm ago'; var h = Math.round(m / 60); if (h < 48) return h + 'h ago'; return Math.round(h / 24) + 'd ago'; }
+
+  function listItems(box, items, sub, onPick, onRemove) {
+    if (!items.length) { box.appendChild(el('div', 'empty-msg', 'Nothing here yet.')); return; }
+    items.forEach(function (s, i) {
+      var row = el('div', 'item'), t = el('div', 't');
+      t.appendChild(el('div', 'n', s.name)); t.appendChild(el('div', 'm', sub(s)));
+      t.onclick = function () { onPick(i); };
+      row.appendChild(t);
+      if (onRemove) { var rm = el('button', 'rm', '✕'); rm.setAttribute('aria-label', 'Remove'); rm.onclick = function () { onRemove(i); }; row.appendChild(rm); }
+      box.appendChild(row);
+    });
+  }
+  function playFromList(label, list, i) { closeSheet(); band = { label: label, stations: list.slice() }; posU = i; setRot(posU * STEP, true); initFx(); tuneIndex(posU); }
+
+  function renderSheet() {
+    Array.prototype.forEach.call(document.querySelectorAll('#tabs .tab'), function (b) { b.classList.toggle('on', b.dataset.t === sheetTab); });
+    var onTab = document.querySelector('#tabs .tab.on'); if (onTab && onTab.scrollIntoView) { try { onTab.scrollIntoView({ inline: 'nearest', block: 'nearest' }); } catch (e) {} }
+    var box = $('sbody'); box.textContent = '';
+    if (sheetTab === 'band') {
+      box.appendChild(el('div', 'lab', 'Current band'));
+      box.appendChild(el('div', '', band.label ? band.label + ' · ' + band.stations.length + ' stations' : '—'));
+      if (band.stations.length) {
+        var sm = summarize(band.stations);
+        [['Quality', sm.q], ['Codecs', sm.c]].forEach(function (r) { var n = el('div', '', r[0] + ': ' + r[1]); n.style.cssText = 'font-size:.85rem;color:var(--mut);margin-top:4px'; box.appendChild(n); });
+      }
+      box.appendChild(el('div', 'lab', 'Country'));
+      var sc = el('select', 'field'); sc.id = 'sc'; box.appendChild(sc);
+      var o0 = el('option', '', 'Anywhere'); o0.value = ''; sc.appendChild(o0);
+      box.appendChild(el('div', 'lab', 'Genre'));
+      var sg = el('select', 'field'); box.appendChild(sg);
+      var g0 = el('option', '', 'Any genre'); g0.value = ''; sg.appendChild(g0);
+      GENRES.forEach(function (g) { var o = el('option', '', g); o.value = g; sg.appendChild(o); });
+      box.appendChild(el('div', 'lab', 'Codec'));
+      var sk = el('select', 'field'); box.appendChild(sk);
+      [['', 'Any codec'], ['MP3', 'MP3'], ['AAC', 'AAC (incl. AAC+)'], ['OGG', 'Ogg / Opus']].forEach(function (a) { var o = el('option', '', a[1]); o.value = a[0]; sk.appendChild(o); });
+      box.appendChild(el('div', 'lab', 'Minimum quality'));
+      var sm2 = el('select', 'field'); box.appendChild(sm2);
+      [['0', 'Any'], ['2', 'OK or better'], ['3', 'Good or better'], ['4', 'Hi-fi or better']].forEach(function (a) { var o = el('option', '', a[1]); o.value = a[0]; sm2.appendChild(o); });
+      box.appendChild(el('div', 'lab', 'Dial order'));
+      var so = el('select', 'field'); box.appendChild(so);
+      [['pop', 'Most popular first'], ['quality', 'Best quality first']].forEach(function (a) { var o = el('option', '', a[1]); o.value = a[0]; so.appendChild(o); });
+      box.appendChild(el('div', 'lab', 'Search'));
+      var sq = el('input', 'field'); sq.type = 'search'; sq.placeholder = 'Station name'; box.appendChild(sq);
+      var go = el('button', 'go', 'Tune this band'); box.appendChild(go);
+      var def = (band.cc || defaultCC());
+      loadCountries().then(function (cs) {
+        cs.forEach(function (c) { var o = el('option', '', c.name + ' (' + c.stationcount + ')'); o.value = c.iso_3166_1; sc.appendChild(o); });
+        sc.value = def; if (sc.value !== def) sc.value = '';
+      }).catch(function () {});
+      go.onclick = async function () {
+        go.textContent = 'Tuning…';
+        try {
+          var cc = sc.value, tag = sg.value, q = sq.value.trim(), codec = sk.value, minr = Number(sm2.value), ord = so.value;
+          var list = await loadBand({ cc: cc, tag: tag, q: q, big: !!(codec || minr || ord === 'quality') });
+          list = filterQuality(list, codec, minr);
+          if (ord === 'quality') list.sort(function (a, b) { return tierRank(b) - tierRank(a) || effBitrate(b) - effBitrate(a); });
+          if (!list.length) { go.textContent = 'Nothing found. Loosen the filters.'; return; }
+          var lab = [cc || 'World', tag, codec, minr ? TIERS[minr] + '+' : '', q ? '“' + q + '”' : ''].filter(Boolean).join(' · ');
+          band = { label: lab, stations: list, cc: cc }; posU = 0; setRot(0, true); closeSheet(); initFx(); tuneIndex(0);
+        } catch (e) { go.textContent = 'Failed: ' + e.message; }
+      };
+    } else if (sheetTab === 'saved') {
+      var chips = el('div', ''); chips.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 4px';
+      ['All'].concat(MOODS).forEach(function (m) {
+        var c = el('button', 'chip' + ((m === 'All' ? '' : m) === savedMood ? ' on' : ''), m);
+        c.onclick = function () { savedMood = m === 'All' ? '' : m; renderSheet(); }; chips.appendChild(c);
+      });
+      box.appendChild(chips);
+      var list2 = saved.filter(function (s) { return !savedMood || s.mood === savedMood; });
+      listItems(box, list2, function (s) { return [s.country, s.mood].filter(Boolean).join(' · '); },
+        function (i) { playFromList('Saved' + (savedMood ? ' · ' + savedMood : ''), list2, i); },
+        function (i) { var id = list2[i].id; saved = saved.filter(function (x) { return x.id !== id; }); lsSet('dial-saved', saved); refreshHeart(); renderSheet(); });
+    } else if (sheetTab === 'heard') {
+      listItems(box, heard, function (s) { return [s.country, ago(s.ts)].filter(Boolean).join(' · '); },
+        function (i) { playFromList('Heard', heard, i); });
+      if (heard.length) { var clr = el('button', 'go', 'Clear log'); clr.style.background = 'var(--line)'; clr.style.color = 'var(--fg)'; clr.onclick = function () { heard = []; lsSet('dial-heard', heard); renderSheet(); }; box.appendChild(clr); }
+    } else if (sheetTab === 'search') {
+      var qi = el('input', 'field'); qi.type = 'search'; qi.placeholder = 'Station name, e.g. Kiss FM'; qi.autocomplete = 'off'; box.appendChild(qi);
+      var qo = el('div', ''); box.appendChild(qo);
+      var qt = null, qk = 0;
+      var qrun = function () {
+        var q = qi.value.trim(); qo.textContent = ''; if (q.length < 2) return;
+        var my = ++qk; qo.appendChild(el('div', 'empty-msg', 'Searching…'));
+        api('/json/stations/search?hidebroken=true&order=clickcount&reverse=true&limit=40&name=' + encodeURIComponent(q) + httpsParam()).then(function (res) {
+          if (my !== qk) return;
+          var list = cleanList(res); qo.textContent = '';
+          if (!list.length) { qo.appendChild(el('div', 'empty-msg', 'No stations match “' + q + '”.')); return; }
+          listItems(qo, list, function (x) { var tr = tierOf(x); return [shortCountry(x), x.tags.split(',')[0].trim(), tr === 'Unrated' ? '' : tr].filter(Boolean).join(' · '); },
+            function (i) { playFromList('Search · ' + q, list, i); });
+        }).catch(function (e) { if (my !== qk) return; qo.textContent = ''; qo.appendChild(el('div', 'empty-msg', 'Search failed: ' + e.message)); });
+      };
+      qi.oninput = function () { clearTimeout(qt); qt = setTimeout(qrun, 350); };
+      qi.onkeydown = function (e) { if (e.key === 'Enter') { clearTimeout(qt); qrun(); } };
+      setTimeout(function () { try { qi.focus(); } catch (e) {} }, 60);
+    } else if (sheetTab === 'more') {
+      box.appendChild(el('div', 'lab', 'Sleep timer'));
+      var sc2 = el('div', 'chips');
+      [0, 15, 30, 45, 60, 90].forEach(function (m) {
+        var on = m === 0 ? !sleepT.end : sleepT.end && sleepT.mins === m;
+        var c = el('button', 'chip' + (on ? ' on' : ''), m ? m + ' min' : 'Off');
+        c.onclick = function () { sleepT.mins = m; setSleep(m); renderSheet(); }; sc2.appendChild(c);
+      });
+      box.appendChild(sc2);
+      box.appendChild(el('div', 'note', 'Fades out over 8 seconds, then stops. The countdown shows next to the station clock.'));
+      box.appendChild(el('div', 'lab', 'Back up'));
+      box.appendChild(el('div', 'note', 'Saves your Saved stations, Heard log and song history to a file. Your AudD token is never included.'));
+      var msg = el('div', 'note'); msg.id = 'bkmsg';
+      var ex = el('button', 'go', 'Export backup file'); ex.onclick = function () { var d = exportData(); msg.textContent = 'Exported ' + d.saved.length + ' saved, ' + d.heard.length + ' heard, ' + d.songs.length + ' songs.'; };
+      var im = el('button', 'go ghost', 'Import backup file');
+      var fi = el('input'); fi.type = 'file'; fi.accept = 'application/json,.json'; fi.hidden = true; fi.id = 'bkfile';
+      im.onclick = function () { fi.click(); };
+      fi.onchange = function () {
+        var f = fi.files && fi.files[0]; if (!f) return;
+        f.text().then(function (t) { var r = importData(t); msg.textContent = 'Imported ' + r.saved + ' saved, ' + r.heard + ' heard, ' + r.songs + ' songs (duplicates skipped).'; })
+          .catch(function (e) { msg.textContent = e.message; });
+      };
+      box.appendChild(ex); box.appendChild(im); box.appendChild(fi); box.appendChild(msg);
+      if (!/^https?:$/.test(location.protocol)) {
+        box.appendChild(el('div', 'lab', 'Install as an app'));
+        box.appendChild(el('div', 'note', 'You’re running Dial from a local file, so Chrome can’t offer “Install app”. Upload the files to any https host, open that address in Chrome, then use the ⋮ menu → Install app.'));
+      }
+    } else { renderSongsTab(box); }
+  }
+  var countriesPromise = null;
+  function loadCountries() {
+    if (!countriesPromise) countriesPromise = api('/json/countries?hidebroken=true&order=name').then(function (cs) { return cs.filter(function (c) { return c.iso_3166_1 && c.stationcount > 0; }); });
+    return countriesPromise.catch(function (e) { countriesPromise = null; throw e; });
+  }
+  function defaultCC() { var l = (navigator.language || 'en-GB').split('-'); return l.length > 1 && l[1].length === 2 ? l[1].toUpperCase() : 'GB'; }
+
+  async function init() {
+    buildDial(); setGlyph(false); updateRing(); initMediaSession();
+    setBadge('Loading', '');
+    var sharedId = (location.hash.match(/^#s=([0-9a-f-]{36})$/i) || [])[1];
+    var last = lsGet('dial-last', null);
+    try {
+      var list = await loadBand({ cc: defaultCC() });
+      var startId = null, extra = null;
+      if (sharedId) { try { var r = await api('/json/stations/byuuid/' + sharedId); if (r && r[0]) { extra = norm(r[0]); startId = extra.id; } } catch (e) {} }
+      if (!extra && last && last.id) { extra = last; startId = last.id; }
+      if (extra && extra.url && !list.some(function (s) { return s.id === extra.id; })) list.unshift(extra);
+      if (!list.length) throw new Error('No stations returned');
+      setBand(defaultCC(), list, startId);
+      band.cc = defaultCC();
+      setBadge('Ready', '');
+      setStatus(sharedId && extra ? 'Shared station ready. Press play.' : 'Press play, then turn the dial to tune.');
+    } catch (e) {
+      setBadge('Offline', 'bad'); $('name').textContent = 'Can’t reach the dial';
+      $('meta').textContent = e.message; setStatus('Check your connection, then reload.', true);
+    }
+  }
+  init();
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(function () {});
+})();
+</script>
+</body>
+</html>
