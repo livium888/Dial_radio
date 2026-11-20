@@ -1245,7 +1245,7 @@
   }
 
   function renderDiscover(box) {
-    var view = lsGet('dial-view', 'map'); if (view !== 'map' && view !== 'browse') view = 'map';
+    var view = lsGet('dial-view', 'browse'); if (view !== 'map' && view !== 'browse') view = 'browse';
     var st = { list: [], seen: {}, offset: 0, done: false, busy: false, tok: 0, auto: 0, err: '' };
     var timer = null, scc, sl, sQual, sCodec, sSort, qi, gi, chipRow, sum, res, more, bPlay, bRand, qsum, map = null, home, ctl, backBtn, chipTags = GENRES.slice();
     function save() { lsSet('dial-filters', sf); }
@@ -1303,7 +1303,7 @@
 
     // view switch
     var seg = el('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', 'Search view');
-    [['map', 'Map'], ['browse', 'Browse']].forEach(function (v) {
+    [['browse', '☰  Browse'], ['map', '🌍  Map']].forEach(function (v) {
       var b = el('button', 'segb' + (view === v[0] ? ' on' : ''), v[1]); b.setAttribute('aria-pressed', String(view === v[0]));
       b.onclick = function () { if (view !== v[0]) { lsSet('dial-view', v[0]); renderSheet(); } }; seg.appendChild(b);
     });
