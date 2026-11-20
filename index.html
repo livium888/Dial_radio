@@ -143,8 +143,7 @@
   <header>
     <div class="brand">di<b>a</b>l</div>
     <nav>
-      <button class="tb ic" id="bSearch" aria-label="Search stations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></button>
-      <button class="tb" id="bBand">Band</button>
+      <button class="tb" id="bSearch">Search</button>
       <button class="tb" id="bSaved">Saved</button>
       <button class="tb" id="bHeard">Heard</button>
       <button class="tb ic" id="bMore" aria-label="More: sleep timer, backup"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
@@ -201,7 +200,6 @@
   <div id="tabs">
     <div id="tabset">
       <button class="tab" data-t="search">Search</button>
-      <button class="tab" data-t="band">Band</button>
       <button class="tab" data-t="saved">Saved</button>
       <button class="tab" data-t="heard">Heard</button>
       <button class="tab" data-t="songs">Songs</button>
@@ -1002,11 +1000,10 @@
     return { saved: a, heard: b, songs: c };
   }
   function closeSheet() { document.body.classList.remove('sheet-open'); }
-  var sheetTab = 'band', countriesLoaded = false, savedMood = '';
+  var sheetTab = 'search', countriesLoaded = false, savedMood = '';
   function openSheet(t) { sheetTab = t; document.body.classList.add('sheet-open'); renderSheet(); }
   $('bSearch').onclick = function () { openSheet('search'); };
   $('bMore').onclick = function () { openSheet('more'); };
-  $('bBand').onclick = function () { openSheet('band'); };
   $('bSaved').onclick = function () { openSheet('saved'); };
   $('bHeard').onclick = function () { openSheet('heard'); };
   $('sx').onclick = closeSheet; $('sheetbg').onclick = closeSheet;
@@ -1030,12 +1027,13 @@
   // ---- Discover: full station search (country, language, genre, quality, codec, sort, paging) ----
   var SORTS = [['pop', 'Most popular'], ['trend', 'Trending now'], ['votes', 'Most voted'], ['quality', 'Best quality (of loaded)'], ['new', 'Recently updated'], ['name', 'A to Z'], ['random', 'Random']];
   var SORT_API = { pop: 'order=clickcount&reverse=true', trend: 'order=clicktrend&reverse=true', votes: 'order=votes&reverse=true', quality: 'order=clickcount&reverse=true', 'new': 'order=changetimestamp&reverse=true', name: 'order=name', random: 'order=random' };
+  var TAG_ALIASES = { 'old time radio': ['old time radio', 'oldtimeradio', 'otr', 'old-time radio', 'classic radio'], 'radio drama': ['radio drama', 'radio play', 'audio drama'], '1940s': ['1940s', '40s', 'forties'] };
   var SF_DEF = { q: '', cc: '', tag: '', lang: '', codec: '', minr: 0, ord: 'pop' };
   var sf = Object.assign({}, SF_DEF, lsGet('dial-filters', {}));
   var tagsPromise = null, langsPromise = null;
   function loadTags() {
-    if (!tagsPromise) tagsPromise = api('/json/tags?hidebroken=true&order=stationcount&reverse=true&limit=80').then(function (ts) {
-      return ts.map(function (t) { return t.name; }).filter(function (n) { return n && n.length >= 3 && n.length <= 24 && !STOP_TAGS[n] && /^[\x20-\x7e]+$/.test(n); }).slice(0, 40);
+    if (!tagsPromise) tagsPromise = api('/json/tags?hidebroken=true&order=stationcount&reverse=true&limit=800').then(function (ts) {
+      return ts.map(function (t) { return t.name; }).filter(function (n) { return n && n.length >= 3 && n.length <= 24 && !STOP_TAGS[n] && /^[\x20-\x7e]+$/.test(n); }).slice(0, 600);
     });
     return tagsPromise.catch(function (e) { tagsPromise = null; throw e; });
   }
@@ -1073,6 +1071,7 @@
       res.textContent = '';
       var sortName = (SORTS.filter(function (x) { return x[0] === sf.ord; })[0] || [0, ''])[1].toLowerCase();
       sum.textContent = (st.busy && !st.list.length ? 'Searching…' : st.list.length + (st.done ? '' : '+') + ' stations') + ' · ' + label() + ' · ' + sortName;
+      if (st.list.length) { var sm = summarize(st.list); qsum.textContent = 'Quality: ' + sm.q + ' · Codecs: ' + sm.c; } else qsum.textContent = '';
       if (st.err) res.appendChild(el('div', 'empty-msg', 'Search failed: ' + st.err));
       else if (!st.list.length && !st.busy) res.appendChild(el('div', 'empty-msg', 'No stations match. Loosen a filter.'));
       else if (st.list.length) listItems(res, st.list, stationSub, function (i) { playFromList('Search · ' + label(), st.list, i); });
@@ -1082,10 +1081,12 @@
     function run(reset) {
       if (reset) { st.list = []; st.seen = {}; st.offset = 0; st.done = false; st.tok++; st.auto = 0; st.err = ''; }
       else if (st.busy || st.done) return;
-      var my = st.tok, page = pageSize(); st.busy = true; paint();
-      api(searchPath(sf, st.offset, page)).then(function (r) {
+      var my = st.tok, page = pageSize(), al = TAG_ALIASES[sf.tag]; st.busy = true; paint();
+      var req = al ? Promise.all(al.map(function (t) { return api(searchPath(Object.assign({}, sf, { tag: t }), 0, page)).catch(function () { return []; }); })).then(function (rs) { return [].concat.apply([], rs); })
+                   : api(searchPath(sf, st.offset, page));
+      req.then(function (r) {
         if (my !== st.tok) return;
-        st.offset += r.length; if (r.length < page) st.done = true;
+        if (al) st.done = true; else { st.offset += r.length; if (r.length < page) st.done = true; }
         var fresh = cleanList(r).filter(function (x) { var k = x.name.toLowerCase(); if (st.seen[k]) return false; st.seen[k] = 1; return true; });
         fresh = filterQuality(fresh, sf.codec, sf.minr);
         st.list = st.list.concat(fresh); sortList(); st.busy = false; paint();
@@ -1111,19 +1112,29 @@
     }).catch(function () {});
 
     box.appendChild(el('div', 'lab', 'Genre'));
+    var gi = el('input', 'field'); gi.type = 'search'; gi.placeholder = 'Any genre. Type to search all tags'; gi.setAttribute('list', 'taglist'); gi.autocomplete = 'off'; gi.value = sf.tag; box.appendChild(gi);
+    var dl = el('datalist'); dl.id = 'taglist'; box.appendChild(dl);
+    var gt = null, chipTags = GENRES.slice();
+    function setTag(v) { v = (v || '').trim().toLowerCase(); if (v === sf.tag) return; sf.tag = v; drawChips(); changed(); }
+    gi.oninput = function () { clearTimeout(gt); gt = setTimeout(function () { setTag(gi.value); }, 600); };
+    gi.onkeydown = function (e) { if (e.key === 'Enter') { clearTimeout(gt); setTag(gi.value); gi.blur(); } };
     chipRow = el('div', 'chipscroll'); box.appendChild(chipRow);
-    function drawChips(tags) {
+    function drawChips() {
       chipRow.textContent = '';
-      var list = tags.slice(); if (sf.tag && list.indexOf(sf.tag) < 0) list.unshift(sf.tag);
+      var list = chipTags.slice(); if (sf.tag) { var at = list.indexOf(sf.tag); if (at >= 0) list.splice(at, 1); list.unshift(sf.tag); }
       list.forEach(function (t) {
         var c = el('button', 'chip' + (sf.tag === t ? ' on' : ''), t);
-        c.onclick = function () { sf.tag = sf.tag === t ? '' : t; drawChips(tags); changed(); }; chipRow.appendChild(c);
+        c.onclick = function () { gi.value = sf.tag === t ? '' : t; setTag(gi.value); }; chipRow.appendChild(c);
       });
     }
-    drawChips(GENRES);
-    loadTags().then(function (t) { if (t.length) drawChips(t); }).catch(function () {});
+    drawChips();
+    loadTags().then(function (t) {
+      chipTags = GENRES.concat(t.filter(function (x) { return GENRES.indexOf(x) < 0; }).slice(0, 30)); drawChips();
+      t.forEach(function (x) { var o = el('option'); o.value = x; dl.appendChild(o); });
+    }).catch(function () {});
 
     sum = el('div', 'sumbar'); box.appendChild(sum);
+    var qsum = el('div', 'note'); qsum.id = 'qsum'; box.appendChild(qsum);
     var act = el('div', 'actrow'); box.appendChild(act);
     var adv = el('div', ''), advOpen = !!(sf.codec || sf.minr || sf.ord !== 'pop');
     adv.hidden = !advOpen;
@@ -1147,50 +1158,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('#tabs .tab'), function (b) { b.classList.toggle('on', b.dataset.t === sheetTab); });
     var onTab = document.querySelector('#tabs .tab.on'); if (onTab && onTab.scrollIntoView) { try { onTab.scrollIntoView({ inline: 'nearest', block: 'nearest' }); } catch (e) {} }
     var box = $('sbody'); box.textContent = '';
-    if (sheetTab === 'band') {
-      box.appendChild(el('div', 'lab', 'Current band'));
-      box.appendChild(el('div', '', band.label ? band.label + ' · ' + band.stations.length + ' stations' : '—'));
-      if (band.stations.length) {
-        var sm = summarize(band.stations);
-        [['Quality', sm.q], ['Codecs', sm.c]].forEach(function (r) { var n = el('div', '', r[0] + ': ' + r[1]); n.style.cssText = 'font-size:.85rem;color:var(--mut);margin-top:4px'; box.appendChild(n); });
-      }
-      box.appendChild(el('div', 'lab', 'Country'));
-      var sc = el('select', 'field'); sc.id = 'sc'; box.appendChild(sc);
-      var o0 = el('option', '', 'Anywhere'); o0.value = ''; sc.appendChild(o0);
-      box.appendChild(el('div', 'lab', 'Genre'));
-      var sg = el('select', 'field'); box.appendChild(sg);
-      var g0 = el('option', '', 'Any genre'); g0.value = ''; sg.appendChild(g0);
-      GENRES.forEach(function (g) { var o = el('option', '', g); o.value = g; sg.appendChild(o); });
-      box.appendChild(el('div', 'lab', 'Codec'));
-      var sk = el('select', 'field'); box.appendChild(sk);
-      [['', 'Any codec'], ['MP3', 'MP3'], ['AAC', 'AAC (incl. AAC+)'], ['OGG', 'Ogg / Opus']].forEach(function (a) { var o = el('option', '', a[1]); o.value = a[0]; sk.appendChild(o); });
-      box.appendChild(el('div', 'lab', 'Minimum quality'));
-      var sm2 = el('select', 'field'); box.appendChild(sm2);
-      [['0', 'Any'], ['2', 'OK or better'], ['3', 'Good or better'], ['4', 'Hi-fi or better']].forEach(function (a) { var o = el('option', '', a[1]); o.value = a[0]; sm2.appendChild(o); });
-      box.appendChild(el('div', 'lab', 'Dial order'));
-      var so = el('select', 'field'); box.appendChild(so);
-      [['pop', 'Most popular first'], ['quality', 'Best quality first']].forEach(function (a) { var o = el('option', '', a[1]); o.value = a[0]; so.appendChild(o); });
-      box.appendChild(el('div', 'lab', 'Search'));
-      var sq = el('input', 'field'); sq.type = 'search'; sq.placeholder = 'Station name'; box.appendChild(sq);
-      var go = el('button', 'go', 'Tune this band'); box.appendChild(go);
-      var def = (band.cc || defaultCC());
-      loadCountries().then(function (cs) {
-        cs.forEach(function (c) { var o = el('option', '', c.name + ' (' + c.stationcount + ')'); o.value = c.iso_3166_1; sc.appendChild(o); });
-        sc.value = def; if (sc.value !== def) sc.value = '';
-      }).catch(function () {});
-      go.onclick = async function () {
-        go.textContent = 'Tuning…';
-        try {
-          var cc = sc.value, tag = sg.value, q = sq.value.trim(), codec = sk.value, minr = Number(sm2.value), ord = so.value;
-          var list = await loadBand({ cc: cc, tag: tag, q: q, big: !!(codec || minr || ord === 'quality') });
-          list = filterQuality(list, codec, minr);
-          if (ord === 'quality') list.sort(function (a, b) { return tierRank(b) - tierRank(a) || effBitrate(b) - effBitrate(a); });
-          if (!list.length) { go.textContent = 'Nothing found. Loosen the filters.'; return; }
-          var lab = [cc || 'World', tag, codec, minr ? TIERS[minr] + '+' : '', q ? '“' + q + '”' : ''].filter(Boolean).join(' · ');
-          band = { label: lab, stations: list, cc: cc }; posU = 0; setRot(0, true); closeSheet(); initFx(); tuneIndex(0);
-        } catch (e) { go.textContent = 'Failed: ' + e.message; }
-      };
-    } else if (sheetTab === 'saved') {
+    if (sheetTab === 'saved') {
       var chips = el('div', ''); chips.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 4px';
       ['All'].concat(MOODS).forEach(function (m) {
         var c = el('button', 'chip' + ((m === 'All' ? '' : m) === savedMood ? ' on' : ''), m);
